@@ -1,7 +1,5 @@
 import itertools
-from functools import lru_cache
 from typing import List
-from typing import Tuple
 
 
 def n_gram_emd(word_1: str, word_2: str, n: int = 2):
@@ -40,19 +38,6 @@ def n_gram_emd(word_1: str, word_2: str, n: int = 2):
             distance += emd_1d(locations, n_gram_locations_1[n_gram])
 
     return distance, total
-
-
-@lru_cache(maxsize=0xFFFF)
-def _emd_1d(locations_1: Tuple[float], locations_2: Tuple[float]) -> float:
-    if len(locations_1) == len(locations_2):
-        return sum(abs(l1 - l2) for l1, l2 in zip(locations_1, locations_2))
-
-    elif len(locations_2) == 1:
-        return len(locations_1) - 1 + min(abs(l1 - locations_2[0]) for l1 in locations_1)
-
-    else:
-        # noinspection PyTypeChecker
-        return 1 + min(_emd_1d(locations_1[:i] + locations_1[i + 1:], locations_2) for i in range(len(locations_1)))
 
 
 def emd_1d_fast(locations_x: List[float], locations_y: List[float]) -> float:
@@ -112,6 +97,7 @@ def emd_1d_fast(locations_x: List[float], locations_y: List[float]) -> float:
             break
 
     # remove any matching points in x and y
+    # todo: do this first
     new_x = []
     new_y = []
     locations_x.reverse()
@@ -139,6 +125,76 @@ def emd_1d_fast(locations_x: List[float], locations_y: List[float]) -> float:
         return acc + len(locations_x)
     if len(locations_y) == 1:
         return acc + min(abs(x - locations_y[0]) for x in locations_x) + len(locations_x) - 1
+
+    # there shouldn't be any duplicates across both lists now
+    assert len(locations_x) + len(locations_y) == len(set(locations_x + locations_y))
+
+    # merge the lists for now to find sets of possibly paired points without actually building a bipartite graph
+    locations = sorted([(loc, 'x') for loc in locations_x] + [(loc, 'y') for loc in locations_y])
+    pair_ranges = []
+    n = 0
+    current_left = None
+    current_right = None
+
+    # get ranges of forward alignments
+    for idx, (loc, xy) in enumerate(locations):
+        if xy == 'x':
+            n += 1
+        if n:
+            if current_left is None:
+                current_left = idx
+                current_right = idx
+            else:
+                current_right = idx
+        if xy == 'y':
+            n -= 1
+        if not n:
+            pair_ranges.append((current_left, 'left'))
+            pair_ranges.append((current_right, 'right'))
+            current_left = None
+            current_right = None
+    if current_left is not None:
+        pair_ranges.append((current_left, 'left'))
+        pair_ranges.append((current_right, 'right'))
+        current_left = None
+        current_right = None
+
+    # get ranges of backward alignments
+    for idx in range(len(locations) - 1, -1, -1):
+        loc, xy = locations[idx]
+        if xy == 'x':
+            n += 1
+        if n:
+            if current_right is None:
+                current_right = idx
+                current_left = idx
+            else:
+                current_left = idx
+        if xy == 'y':
+            n -= 1
+        if not n:
+            pair_ranges.append((current_right, 'right'))
+            pair_ranges.append((current_left, 'left'))
+            current_right = None
+            current_left = None
+    if current_right is not None:
+        pair_ranges.append((current_right, 'right'))
+        pair_ranges.append((current_left, 'left'))
+
+    # merge ranges
+    pair_ranges = sorted(pair_ranges)
+    combined_ranges = []
+    n_open = 0
+    for loc, lr in pair_ranges:
+        if lr == 'left':
+            if not n_open:
+                combined_ranges.append((loc, lr))
+            n_open += 1
+
+        else:
+            n_open -= 1
+            if not n_open:
+                combined_ranges.append((loc, lr))
 
     # todo: build the bipartite graph
     # backward and forward pass

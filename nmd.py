@@ -332,5 +332,6 @@ if __name__ == '__main__':
     print(speed_test('banana', 'bababananananananananannananananananananananananananannanananananananana'))
     print(speed_test('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
 
-    for aa in a:
-        speed_test(aa, b)
+    with open('schwarzenegger.txt') as f:
+        for line in f:
+            print(line.strip(), speed_test(line.strip(), 'schwarzenegger'))

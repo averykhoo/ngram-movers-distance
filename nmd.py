@@ -594,6 +594,7 @@ if __name__ == '__main__':
     ]
     b = 'Schwarzenegger'
 
+    print(n_gram_emd('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
     print(n_gram_emd('banana', 'bababanananananananana'))
     print(n_gram_emd('banana', 'bababanananananananananna'))
     print(n_gram_emd('banana', 'nanananananabababa'))

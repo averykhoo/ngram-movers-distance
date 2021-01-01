@@ -6,20 +6,16 @@ from typing import Union
 def speed_test(word_1: str, word_2: str):
     edit_distance(word_1, word_2)
     damerau_levenshtein_distance(word_1, word_2)
-
     return n_gram_emd(word_1, word_2)
 
 
 def n_gram_emd(word_1: str, word_2: str, n: int = 2):
-    """
-    optimized for readability, not speed
-    test cases: https://www.watercoolertrivia.com/blog/schwarzenegger
-    """
-
+    # sanity checks
     assert isinstance(word_1, str) and '\2' not in word_1 and '\3' not in word_1
     assert isinstance(word_2, str) and '\2' not in word_2 and '\3' not in word_2
     assert isinstance(n, int) and n >= 2
 
+    # generate n-grams
     n_grams_1 = [f'\2{word_1}\3'[i:i + n] for i in range(len(word_1) - n + 3)]
     n_grams_2 = [f'\2{word_2}\3'[i:i + n] for i in range(len(word_2) - n + 3)]
 
@@ -45,7 +41,10 @@ def n_gram_emd(word_1: str, word_2: str, n: int = 2):
             # print(n_gram, locations, n_gram_locations_1[n_gram])
             distance += emd_1d(locations, n_gram_locations_1[n_gram])
 
-    return distance, total
+    # just check that we saw the right total number of ngrams
+    assert total == len(word_1) + len(word_2) - 2 * n + 6
+
+    return distance
 
 
 def emd_1d_faster(locations_x: Sequence[Union[int, float]],
@@ -71,7 +70,7 @@ def emd_1d_faster(locations_x: Sequence[Union[int, float]],
 
     # only one item, so take min distance and count the rest of the l1 items
     if len(locations_y) == 1:
-        return float(min(abs(l1 - locations_y[0]) for l1 in locations_x) + len(locations_x) - 1)
+        return float(min(abs(x - locations_y[0]) for x in locations_x) + len(locations_x) - 1)
 
     # make a COPY of the list, sorted in reverse (descending order)
     # we'll be modifying in-place later, and we don't want to update the input
@@ -194,6 +193,14 @@ def emd_1d_faster(locations_x: Sequence[Union[int, float]],
         connected_y = [idx for idx, is_y in locations[left:right + 1] if is_y]
 
         # todo: greedy match endpoints again?
+        # greedy-match constrained points with only one possible match (at the larger end of locations_y)
+        while connected_y and connected_x:
+            if connected_y[-1] >= connected_x[-1]:
+                acc += connected_y.pop(-1) - connected_x.pop(-1)
+            elif len(connected_x) >= 2 and abs(connected_x[-1] - connected_y[-1]) < abs(connected_y[-1] - connected_x[-2]):
+                acc += connected_x.pop(-1) - connected_y.pop(-1)
+            else:
+                break
 
         # todo: try to greedy-match unshared points?
         # must match all points in this component
@@ -203,12 +210,21 @@ def emd_1d_faster(locations_x: Sequence[Union[int, float]],
 
         # todo: actually build a bipartite graph to exclude impossible match options?
 
+        # just count the x items
+        if len(connected_y) == 0:
+            acc += len(connected_x)
+
+        # only one item, so take min distance and count the rest of the x items
+        elif len(connected_y) == 1:
+            acc += float(min(abs(x - connected_y[0]) for x in connected_x)) + len(connected_x) - 1
+
         # enumerate all possible matches for this connected component
         # this code block works even if connected_y is empty
-        min_cost = len(connected_y)
-        for x_combination in itertools.combinations(connected_x, len(connected_y)):
-            min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, connected_y)))
-        acc += min_cost + len(connected_x) - len(connected_y)
+        else:
+            min_cost = len(connected_y)
+            for x_combination in itertools.combinations(connected_x, len(connected_y)):
+                min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, connected_y)))
+            acc += min_cost + len(connected_x) - len(connected_y)
 
         # update last seen
         last_seen = right
@@ -235,8 +251,8 @@ def emd_1d_slow_v2(locations_x: Sequence[float], locations_y: Sequence[float]) -
 
 def emd_1d(locations_x: Sequence[float], locations_y: Sequence[float]) -> float:
     answer_fast = emd_1d_faster(locations_x, locations_y)
-    answer_slow = emd_1d_slow_v2(locations_x, locations_y)
-    assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
+    # answer_slow = emd_1d_slow_v2(locations_x, locations_y)
+    # assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
     return answer_fast
 
 
@@ -304,33 +320,35 @@ def damerau_levenshtein_distance(seq1, seq2):
 
 if __name__ == '__main__':
 
-    num_x = 4
-    num_y = 7
+    # num_x = 4
+    # num_y = 7
+    #
+    # xs = [i / (num_x - 1) for i in range(num_x)]
+    # ys = [i / (num_y - 1) for i in range(num_y)]
+    # print(xs)
+    # print(ys)
+    # xs = xs + xs + xs
+    #
+    # for x_len in range(len(xs) + 1):
+    #     for y_len in range(len(ys) + 1):
+    #         print(x_len, y_len)
+    #         for x_combi in itertools.combinations(xs, x_len):
+    #             for y_combi in itertools.combinations(ys, y_len):
+    #                 assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
 
-    xs = [i / (num_x - 1) for i in range(num_x)]
-    ys = [i / (num_y - 1) for i in range(num_y)]
-    print(xs)
-    print(ys)
-    xs = xs + xs + xs
+    # for _ in range(1000):
+    #     speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    #     speed_test('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    #     speed_test('banana', 'bababanananananananana')
+    #     speed_test('banana', 'bababanananananananananna')
+    #     speed_test('banana', 'nanananananabababa')
+    #     speed_test('banana', 'banana')
+    #     speed_test('nanananananabababa', 'banana')
+    #     speed_test('banana', 'bababananananananananannanananananananana')
+    #     speed_test('banana', 'bababananananananananannananananananananananananananannanananananananana')
+    #     speed_test('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana')
 
-    for x_len in range(len(xs) + 1):
-        for y_len in range(len(ys) + 1):
-            print(x_len, y_len)
-            for x_combi in itertools.combinations(xs, x_len):
-                for y_combi in itertools.combinations(ys, y_len):
-                    assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
-
-    print(speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
-    print(speed_test('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
-    print(speed_test('banana', 'bababanananananananana'))
-    print(speed_test('banana', 'bababanananananananananna'))
-    print(speed_test('banana', 'nanananananabababa'))
-    print(speed_test('banana', 'banana'))
-    print(speed_test('nanananananabababa', 'banana'))
-    print(speed_test('banana', 'bababananananananananannanananananananana'))
-    print(speed_test('banana', 'bababananananananananannananananananananananananananannanananananananana'))
-    print(speed_test('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
-
+    # test cases: https://www.watercoolertrivia.com/blog/schwarzenegger
     with open('schwarzenegger.txt') as f:
         for line in f:
             print(line.strip(), speed_test(line.strip(), 'schwarzenegger'))

@@ -68,11 +68,33 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
 
     # make a COPY of the list, sorted in reverse (descending order)
     # we'll be modifying in-place later, and we don't want to update the input
-    locations_x = sorted(locations_x, reverse=True)
-    locations_y = sorted(locations_y, reverse=True)
+    locations_x = sorted(locations_x)
+    locations_y = sorted(locations_y)
 
     # accumulated distance as we simplify the problem
     acc = 0
+
+    # remove any matching points in x and y
+    # reverses the list (converts ascending -> descending)
+    new_x = []
+    new_y = []
+    while locations_x and locations_y:
+        if locations_x[-1] > locations_y[-1]:
+            new_x.append(locations_x.pop(-1))
+        elif locations_y[-1] > locations_x[-1]:
+            new_y.append(locations_y.pop(-1))
+        else:
+            # discard duplicate
+            locations_x.pop(-1)
+            locations_y.pop(-1)
+    if locations_x:
+        locations_x.reverse()
+        new_x.extend(locations_x)
+    if locations_y:
+        locations_y.reverse()
+        new_y.extend(locations_y)
+    locations_x = new_x
+    locations_y = new_y
 
     # greedy-match constrained points with only one possible match (at the smaller end of locations_y)
     while locations_y and locations_x:
@@ -96,30 +118,6 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
         else:
             break
 
-    # remove any matching points in x and y
-    # todo: do this before removing endpoints
-    new_x = []
-    new_y = []
-    locations_x.reverse()
-    locations_y.reverse()
-    while locations_x and locations_y:
-        if locations_x[-1] < locations_y[-1]:
-            new_x.append(locations_x.pop(-1))
-        elif locations_x[-1] > locations_y[-1]:
-            new_y.append(locations_y.pop(-1))
-        else:
-            # discard duplicate
-            locations_x.pop(-1)
-            locations_y.pop(-1)
-    if locations_x:
-        locations_x.reverse()
-        new_x.extend(locations_x)
-    if locations_y:
-        locations_y.reverse()
-        new_y.extend(locations_y)
-    locations_x = new_x
-    locations_y = new_y
-
     # another chance to early exit
     if len(locations_y) == 0:
         return acc + len(locations_x)
@@ -132,48 +130,47 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
     # merge the lists for now to find sets of possibly paired points without actually building a bipartite graph
     locations = sorted([(loc, False) for loc in locations_x] + [(loc, True) for loc in locations_y])
     component_ranges = []
+
+    # get ranges of forward alignments
     n = 0
     current_left = None
     current_right = None
-
-    # get ranges of forward alignments
     for idx, (loc, is_y) in enumerate(locations):
         if is_y:
             n += 1
             if current_left is None:
                 current_left = idx
             current_right = idx
-        else:
-            if n > 0:
-                n -= 1
-                current_right = idx
-            if n == 0 and current_left is not None:
+        elif n > 0:
+            n -= 1
+            current_right = idx
+            if n == 0:
                 component_ranges.append((current_left, current_right))
                 current_left = None
                 current_right = None
     if current_left is not None:
+        assert current_right == len(locations) - 1
         component_ranges.append((current_left, current_right))
-        current_left = None
-        current_right = None
 
     # get ranges of backward alignments
+    n = 0
+    current_left = None
+    current_right = None
     for idx in range(len(locations) - 1, -1, -1):
-        loc, is_y = locations[idx]
-
-        if is_y:
+        if locations[idx][1]:  # if is_y:
             n += 1
             if current_right is None:
                 current_right = idx
             current_left = idx
-        else:
-            if n > 0:
-                n -= 1
-                current_left = idx
-            if n == 0 and current_right is not None:
+        elif n > 0:
+            n -= 1
+            current_left = idx
+            if n == 0:
                 component_ranges.append((current_left, current_right))
                 current_right = None
                 current_left = None
     if current_right is not None:
+        assert current_left == 0
         component_ranges.append((current_left, current_right))
 
     # merge ranges to get the sets of connected components
@@ -200,13 +197,15 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
         # [... x3 x4 y1 x5 x6 ...] ==> y1 can only match x4 or x5 (assuming there are no y-chains)
         # if it succeeds, then remove the component
 
-        # enumerate the options instead of recursing
         # todo: actually build the bipartite graph to exclude impossible match options?
+
+        # enumerate the options instead of recursing
         acc += len(connected_x) - len(connected_y)
-        min_cost = len(connected_y)
-        for x_combination in itertools.combinations(connected_x, len(connected_y)):
-            min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, connected_y)))
-        acc += min_cost
+        if connected_y:
+            min_cost = len(connected_y)
+            for x_combination in itertools.combinations(connected_x, len(connected_y)):
+                min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, connected_y)))
+            acc += min_cost
 
         # update last seen
         last_seen = right

@@ -1,5 +1,7 @@
 import itertools
 from typing import List
+from typing import Sequence
+from typing import Union
 
 
 def n_gram_emd(word_1: str, word_2: str, n: int = 2):
@@ -40,19 +42,18 @@ def n_gram_emd(word_1: str, word_2: str, n: int = 2):
     return distance, total
 
 
-def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
+def emd_1d_faster(locations_x: Sequence[Union[int, float]],
+                  locations_y: Sequence[Union[int, float]],
+                  ) -> float:
     """
-    distance needed to move
-    todo: optimize worst case
+    kind of like earth mover's distance
+    but positions are limited to within the unit interval
+    and must be quantized
     """
 
     # all inputs must be in the unit interval
     assert all(0 <= x <= 1 for x in locations_x)
     assert all(0 <= x <= 1 for x in locations_y)
-
-    # in our use case, there should be no duplicates in each list
-    assert len(locations_x) == len(set(locations_x))
-    assert len(locations_y) == len(set(locations_y))
 
     # locations_1 will be the longer list
     if len(locations_x) < len(locations_y):
@@ -60,19 +61,23 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
 
     # empty list, so just count the l1 items and exit early
     if len(locations_y) == 0:
-        return len(locations_x)
+        return float(len(locations_x))
 
     # only one item, so take min distance and count the rest of the l1 items
     if len(locations_y) == 1:
-        return min(abs(l1 - locations_y[0]) for l1 in locations_x) + len(locations_x) - 1
+        return float(min(abs(l1 - locations_y[0]) for l1 in locations_x) + len(locations_x) - 1)
 
     # make a COPY of the list, sorted in reverse (descending order)
     # we'll be modifying in-place later, and we don't want to update the input
     locations_x = sorted(locations_x)
     locations_y = sorted(locations_y)
 
-    # accumulated distance as we simplify the problem
-    acc = 0
+    # last chance to early exit
+    if len(locations_x) == len(locations_y):
+        return float(sum(abs(x - y) for x, y in zip(locations_x, locations_y)))
+
+    # accumulate distance as we simplify the problem
+    acc = 0.0
 
     # remove any matching points in x and y
     # reverses the list (converts ascending -> descending)
@@ -96,11 +101,16 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
     locations_x = new_x
     locations_y = new_y
 
+    # there shouldn't be any duplicates across both lists now
+    # there can be duplicates within each list, but that's okay
+
     # greedy-match constrained points with only one possible match (at the smaller end of locations_y)
     while locations_y and locations_x:
         if locations_y[-1] <= locations_x[-1]:
             acc += locations_x.pop(-1) - locations_y.pop(-1)
-        elif len(locations_x) >= 2 and (locations_y[-1] - locations_x[-1]) <= (locations_x[-2] - locations_y[-1]):
+
+        # this must be < and not <= if there are duplicates in each list, otherwise it removes the wrong pairs of points
+        elif len(locations_x) >= 2 and abs(locations_y[-1] - locations_x[-1]) < abs(locations_x[-2] - locations_y[-1]):
             acc += locations_y.pop(-1) - locations_x.pop(-1)
         else:
             break
@@ -113,7 +123,7 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
     while locations_y and locations_x:
         if locations_y[-1] >= locations_x[-1]:
             acc += locations_y.pop(-1) - locations_x.pop(-1)
-        elif len(locations_x) >= 2 and abs(locations_x[-1] - locations_y[-1]) <= abs(locations_y[-1] - locations_x[-2]):
+        elif len(locations_x) >= 2 and abs(locations_x[-1] - locations_y[-1]) < abs(locations_y[-1] - locations_x[-2]):
             acc += locations_x.pop(-1) - locations_y.pop(-1)
         else:
             break
@@ -124,9 +134,6 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
     if len(locations_y) == 1:
         return acc + min(abs(x - locations_y[0]) for x in locations_x) + len(locations_x) - 1
 
-    # there shouldn't be any duplicates across both lists now
-    assert len(locations_x) + len(locations_y) == len(set(locations_x + locations_y))
-
     # merge the lists for now to find sets of possibly paired points without actually building a bipartite graph
     locations = sorted([(loc, False) for loc in locations_x] + [(loc, True) for loc in locations_y])
     component_ranges = []
@@ -134,44 +141,34 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
     # get ranges of forward alignments
     n = 0
     current_left = None
-    current_right = None
     for idx, (loc, is_y) in enumerate(locations):
         if is_y:
             n += 1
             if current_left is None:
                 current_left = idx
-            current_right = idx
         elif n > 0:
             n -= 1
-            current_right = idx
             if n == 0:
-                component_ranges.append((current_left, current_right))
+                component_ranges.append((current_left, idx))
                 current_left = None
-                current_right = None
-    if current_left is not None:
-        assert current_right == len(locations) - 1
-        component_ranges.append((current_left, current_right))
+    if current_left is not None:  # current_left could be 0, so don't just test truthiness
+        component_ranges.append((current_left, len(locations) - 1))
 
     # get ranges of backward alignments
     n = 0
-    current_left = None
     current_right = None
     for idx in range(len(locations) - 1, -1, -1):
         if locations[idx][1]:  # if is_y:
             n += 1
             if current_right is None:
                 current_right = idx
-            current_left = idx
         elif n > 0:
             n -= 1
-            current_left = idx
             if n == 0:
-                component_ranges.append((current_left, current_right))
+                component_ranges.append((idx, current_right))
                 current_right = None
-                current_left = None
     if current_right is not None:
-        assert current_left == 0
-        component_ranges.append((current_left, current_right))
+        component_ranges.append((0, current_right))
 
     # merge ranges to get the sets of connected components
     # [x1 y1 x2 x3 x4 y2 x3] ==> [x1 y1 x2], [x4 y2 x5] (x3 can never be matched)
@@ -201,12 +198,11 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
         # todo: actually build a bipartite graph to exclude impossible match options?
 
         # enumerate all possible matches for this connected component
-        acc += len(connected_x) - len(connected_y)
-        if connected_y:
-            min_cost = len(connected_y)
-            for x_combination in itertools.combinations(connected_x, len(connected_y)):
-                min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, connected_y)))
-            acc += min_cost
+        # this code block works even if connected_y is empty
+        min_cost = len(connected_y)
+        for x_combination in itertools.combinations(connected_x, len(connected_y)):
+            min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, connected_y)))
+        acc += min_cost + len(connected_x) - len(connected_y)
 
         # update last seen
         last_seen = right
@@ -242,13 +238,15 @@ def emd_1d_slow_v2(locations_x: List[float], locations_y: List[float]) -> float:
 
 
 def emd_1d(locations_x: List[float], locations_y: List[float]) -> float:
-    answer_1 = emd_1d_faster(locations_x, locations_y)
-    answer_2 = emd_1d_slow_v2(locations_x, locations_y)
-    assert abs(answer_1 - answer_2) < 0.00001, (answer_2, answer_1)
-    return answer_2
+    answer_fast = emd_1d_faster(locations_x, locations_y)
+    answer_slow = emd_1d_slow_v2(locations_x, locations_y)
+    assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
+    return answer_slow
 
 
 if __name__ == '__main__':
+
+    emd_1d([0.0, 0.25], [0.0, 0.14285714285714285, 0.2857142857142857, 0.42857142857142855, 0.42857142857142855])
 
     # print(n_gram_emd('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
     # print(n_gram_emd('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
@@ -261,14 +259,17 @@ if __name__ == '__main__':
     # print(n_gram_emd('banana', 'bababananananananananannananananananananananananananannanananananananana'))
     # print(n_gram_emd('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
 
-    num_x = 12
-    num_y = 11
+    num_x = 3
+    num_y = 7
 
-    xs = [i / num_x for i in range(num_x + 1)]
-    ys = [i / num_y for i in range(num_y + 1)]
+    xs = [i / (num_x - 1) for i in range(num_x)]
+    ys = [i / (num_y - 1) for i in range(num_y)]
+    print(xs)
+    print(ys)
+    xs = xs + xs + xs + xs
 
-    for x_len in range(num_x + 1):
-        for y_len in range(num_y + 1):
+    for x_len in range(len(xs) + 1):
+        for y_len in range(len(ys) + 1):
             print(x_len, y_len)
             for x_combi in itertools.combinations(xs, x_len):
                 for y_combi in itertools.combinations(ys, y_len):

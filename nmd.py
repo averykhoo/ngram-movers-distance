@@ -197,7 +197,8 @@ def emd_1d_faster(locations_x: Sequence[Union[int, float]],
         while connected_y and connected_x:
             if connected_y[-1] >= connected_x[-1]:
                 acc += connected_y.pop(-1) - connected_x.pop(-1)
-            elif len(connected_x) >= 2 and abs(connected_x[-1] - connected_y[-1]) < abs(connected_y[-1] - connected_x[-2]):
+            elif len(connected_x) >= 2 and abs(connected_x[-1] - connected_y[-1]) < abs(
+                    connected_y[-1] - connected_x[-2]):
                 acc += connected_x.pop(-1) - connected_y.pop(-1)
             else:
                 break
@@ -251,8 +252,8 @@ def emd_1d_slow_v2(locations_x: Sequence[float], locations_y: Sequence[float]) -
 
 def emd_1d(locations_x: Sequence[float], locations_y: Sequence[float]) -> float:
     answer_fast = emd_1d_faster(locations_x, locations_y)
-    # answer_slow = emd_1d_slow_v2(locations_x, locations_y)
-    # assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
+    answer_slow = emd_1d_slow_v2(locations_x, locations_y)
+    assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
     return answer_fast
 
 
@@ -320,33 +321,33 @@ def damerau_levenshtein_distance(seq1, seq2):
 
 if __name__ == '__main__':
 
-    # num_x = 4
-    # num_y = 7
-    #
-    # xs = [i / (num_x - 1) for i in range(num_x)]
-    # ys = [i / (num_y - 1) for i in range(num_y)]
-    # print(xs)
-    # print(ys)
-    # xs = xs + xs + xs
-    #
-    # for x_len in range(len(xs) + 1):
-    #     for y_len in range(len(ys) + 1):
-    #         print(x_len, y_len)
-    #         for x_combi in itertools.combinations(xs, x_len):
-    #             for y_combi in itertools.combinations(ys, y_len):
-    #                 assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
+    num_x = 4
+    num_y = 7
 
-    # for _ in range(1000):
-    #     speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-    #     speed_test('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-    #     speed_test('banana', 'bababanananananananana')
-    #     speed_test('banana', 'bababanananananananananna')
-    #     speed_test('banana', 'nanananananabababa')
-    #     speed_test('banana', 'banana')
-    #     speed_test('nanananananabababa', 'banana')
-    #     speed_test('banana', 'bababananananananananannanananananananana')
-    #     speed_test('banana', 'bababananananananananannananananananananananananananannanananananananana')
-    #     speed_test('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana')
+    xs = [i / (num_x - 1) for i in range(num_x)]
+    ys = [i / (num_y - 1) for i in range(num_y)]
+    print(xs)
+    print(ys)
+    xs = xs + xs + xs
+
+    for x_len in range(len(xs) + 1):
+        for y_len in range(len(ys) + 1):
+            print(x_len, y_len)
+            for x_combi in itertools.combinations(xs, x_len):
+                for y_combi in itertools.combinations(ys, y_len):
+                    assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
+
+    for _ in range(1000):
+        speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+        speed_test('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+        speed_test('banana', 'bababanananananananana')
+        speed_test('banana', 'bababanananananananananna')
+        speed_test('banana', 'nanananananabababa')
+        speed_test('banana', 'banana')
+        speed_test('nanananananabababa', 'banana')
+        speed_test('banana', 'bababananananananananannanananananananana')
+        speed_test('banana', 'bababananananananananannananananananananananananananannanananananananana')
+        speed_test('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana')
 
     # test cases: https://www.watercoolertrivia.com/blog/schwarzenegger
     with open('schwarzenegger.txt') as f:

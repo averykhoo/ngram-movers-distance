@@ -4,6 +4,13 @@ from typing import Sequence
 from typing import Union
 
 
+def speed_test(word_1: str, word_2: str, n: int = 2):
+    levenshteinDistance(word_1, word_2)
+    dameraulevenshtein(word_1, word_2)
+
+    return n_gram_emd(word_1, word_2)
+
+
 def n_gram_emd(word_1: str, word_2: str, n: int = 2):
     """
     optimized for readability, not speed
@@ -229,24 +236,84 @@ def emd_1d_slow_v2(locations_x: List[float], locations_y: List[float]) -> float:
 
 def emd_1d(locations_x: List[float], locations_y: List[float]) -> float:
     answer_fast = emd_1d_faster(locations_x, locations_y)
-    answer_slow = emd_1d_slow_v2(locations_x, locations_y)
-    assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
-    return answer_slow
+    # answer_slow = emd_1d_slow_v2(locations_x, locations_y)
+    # assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
+    return answer_fast
+
+
+def levenshteinDistance(s1, s2):
+    if len(s1) > len(s2):
+        s1, s2 = s2, s1
+
+    distances = range(len(s1) + 1)
+    for i2, c2 in enumerate(s2):
+        distances_ = [i2 + 1]
+        for i1, c1 in enumerate(s1):
+            if c1 == c2:
+                distances_.append(distances[i1])
+            else:
+                distances_.append(1 + min((distances[i1], distances[i1 + 1], distances_[-1])))
+        distances = distances_
+    return distances[-1]
+
+
+def dameraulevenshtein(seq1, seq2):
+    """Calculate the Damerau-Levenshtein distance between sequences.
+
+    This distance is the number of additions, deletions, substitutions,
+    and transpositions needed to transform the first sequence into the
+    second. Although generally used with strings, any sequences of
+    comparable objects will work.
+
+    Transpositions are exchanges of *consecutive* characters; all other
+    operations are self-explanatory.
+
+    This implementation is O(N*M) time and O(M) space, for N and M the
+    lengths of the two sequences.
+
+    >>> dameraulevenshtein('ba', 'abc')
+    2
+    >>> dameraulevenshtein('fee', 'deed')
+    2
+
+    It works with arbitrary sequences too:
+    >>> dameraulevenshtein('abcd', ['b', 'a', 'c', 'd', 'e'])
+    2
+    """
+    # codesnippet:D0DE4716-B6E6-4161-9219-2903BF8F547F
+    # Conceptually, this is based on a len(seq1) + 1 * len(seq2) + 1 matrix.
+    # However, only the current and two previous rows are needed at once,
+    # so we only store those.
+    oneago = None
+    thisrow = list(range(1, len(seq2) + 1)) + [0]
+    for x in range(len(seq1)):
+        # Python lists wrap around for negative indices, so put the
+        # leftmost column at the *end* of the list. This matches with
+        # the zero-indexed strings and saves extra calculation.
+        twoago, oneago, thisrow = oneago, thisrow, [0] * len(seq2) + [x + 1]
+        for y in range(len(seq2)):
+            delcost = oneago[y] + 1
+            addcost = thisrow[y - 1] + 1
+            subcost = oneago[y - 1] + (seq1[x] != seq2[y])
+            thisrow[y] = min(delcost, addcost, subcost)
+            # This block deals with transpositions
+            if (x > 0 and y > 0 and seq1[x] == seq2[y - 1]
+                    and seq1[x - 1] == seq2[y] and seq1[x] != seq2[y]):
+                thisrow[y] = min(thisrow[y], twoago[y - 2] + 1)
+    return thisrow[len(seq2) - 1]
 
 
 if __name__ == '__main__':
-    emd_1d([0.0, 0.25], [0.0, 0.14285714285714285, 0.2857142857142857, 0.42857142857142855, 0.42857142857142855])
-
-    print(n_gram_emd('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
-    print(n_gram_emd('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
-    print(n_gram_emd('banana', 'bababanananananananana'))
-    print(n_gram_emd('banana', 'bababanananananananananna'))
-    print(n_gram_emd('banana', 'nanananananabababa'))
-    print(n_gram_emd('banana', 'banana'))
-    print(n_gram_emd('nanananananabababa', 'banana'))
-    print(n_gram_emd('banana', 'bababananananananananannanananananananana'))
-    print(n_gram_emd('banana', 'bababananananananananannananananananananananananananannanananananananana'))
-    print(n_gram_emd('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
+    print(speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
+    print(speed_test('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
+    print(speed_test('banana', 'bababanananananananana'))
+    print(speed_test('banana', 'bababanananananananananna'))
+    print(speed_test('banana', 'nanananananabababa'))
+    print(speed_test('banana', 'banana'))
+    print(speed_test('nanananananabababa', 'banana'))
+    print(speed_test('banana', 'bababananananananananannanananananananana'))
+    print(speed_test('banana', 'bababananananananananannananananananananananananananannanananananananana'))
+    print(speed_test('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
 
     # num_x = 3
     # num_y = 7
@@ -263,3 +330,263 @@ if __name__ == '__main__':
     #         for x_combi in itertools.combinations(xs, x_len):
     #             for y_combi in itertools.combinations(ys, y_len):
     #                 assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
+
+    a = [
+        'Schwartzenegger',
+        'Schwarzeneger',
+        'Schwarzenager',
+        'Schwartzenager',
+        'Schwartzeneger',
+        'Schwarzeneggar',
+        'Schwarzenneger',
+        'Swartzenegger',
+        'Swarzenegger',
+        'Schwarzenagger',
+        'Schwarznegger',
+        'Swartzenager',
+        'Schwarzanegger',
+        'Shwarzenegger',
+        'Schwartzenagger',
+        'Swartzeneger',
+        'Schwartznegger',
+        'Schwarzenegar',
+        'Shwartzenegger',
+        'Schwarzennegger',
+        'Schwarzennager',
+        'Schwartzanegger',
+        'Schwartzenneger',
+        'Schwarzanager',
+        'Schwarzengger',
+        'Schwarzennegar',
+        'Shwartzeneger',
+        'Schwartzeneggar',
+        'Schwarzneger',
+        'Schwarzneggar',
+        'Schwartzenegar',
+        'Schwartzneger',
+        'Schwazenegger',
+        'Shwartzenager',
+        'Swartzanegger',
+        'Swarzeneger',
+        'Swarzeneggar',
+        'Schwarenegger',
+        'Schwartzennager',
+        'Schwartzneggar',
+        'Shwarzeneger',
+        'Swartzeneggar',
+        'Swartznegger',
+        'Swarzenager',
+        'Swarzenagger',
+        'Scharzenegger',
+        'Schwarnegger',
+        'Schwartnegger',
+        'Schwartzanager',
+        'Schwartzaneger',
+        'Schwartzinager',
+        'Schwarzzenager',
+        'Shwarzenager',
+        'Swartzenagger',
+        'Swartzineger',
+        'Scharzeneger',
+        'Schwarnzenegger',
+        'Schwartenager',
+        'Schwartenegar',
+        'Schwarteneger',
+        'Schwartnegar',
+        'Schwartzanegar',
+        'Schwartzenger',
+        'Schwartzenggar',
+        'Schwartzineger',
+        'Schwartznager',
+        'Schwarzaneger',
+        'Schwarzaneggar',
+        'Schwarzanger',
+        'Schwarzenaeger',
+        'Schwarzeniger',
+        'Schwarzinager',
+        'Schwarznager',
+        'Schwarztenegger',
+        'Schwarzzeneger',
+        'Schwarzzenegger',
+        'Schwazenager',
+        'Schwazeneger',
+        'Scwartzenegger',
+        'Scwarzenegger',
+        'Shwartznegger',
+        'Shwarzenegar',
+        'Swarteneger',
+        'Swartzanager',
+        'Swartznager',
+        'Swartzneger',
+        'Swarzanegger',
+        'Swarzennager',
+        'Swarzenneger',
+        'Swazeneger',
+        'Schartzenager',
+        'Schartzennager',
+        'Schartznager',
+        'Scharwzeneger',
+        'Scharzenager',
+        'Schawarzneneger',
+        'Schawrknegger',
+        'Schazenegger',
+        'Schneckenger',
+        'Schrarznegger',
+        'Schrawzenneger',
+        'Schrwazeneggar',
+        'Schrwazenegger',
+        'Schrwtzanagger',
+        'Schsargdneger',
+        'Schwaranagger',
+        'Schwararzenegger',
+        'Schwarezenegger',
+        'Schwarganzer',
+        'Schwarnznegar',
+        'Schwarsanegger',
+        'Schwarsenagger',
+        'Schwarsnegger',
+        'Schwartaneger',
+        'Schwartenagger',
+        'Schwartenegger',
+        'Schwartenneger',
+        'Schwarterneger',
+        'Schwartineger',
+        'Schwartnager',
+        'Schwartnehar',
+        'Schwartsaneger',
+        'Schwartsinager',
+        'Schwartzaneggar',
+        'Schwartzanger',
+        'Schwartzeiojaweofjaweneger',
+        'Schwartzenagar',
+        'Schwartzenegget',
+        'Schwartzeneiger',
+        'Schwartzengar',
+        'Schwartzenkangaroo',
+        'Schwartzennegar',
+        'Schwartzinagger',
+        'Schwartzinegar',
+        'Schwartziniger',
+        'Schwartznagger',
+        'Schwartznegar',
+        'Schwarz',
+        'Schwarzamegger',
+        'Schwarzanagger',
+        'Schwarzatwizzler',
+        'Schwarzeggar',
+        'Schwarzegger',
+        'Schwarzenaega',
+        'Schwarzenagher',
+        'Schwarzeneeger',
+        'Schwarzenegor',
+        'Schwarzenenergy',
+        'Schwarzengeggar',
+        'Schwarzgenar',
+        'Schwarzinagger',
+        'Schwarzineggar',
+        'Schwarztenegar',
+        'Schwarzzanager',
+        'Schwatzeneggar',
+        'Schwatzenneger',
+        'Schwazenaeger',
+        'Schwazenegrr',
+        'Schwazerneger',
+        'Schwazinager',
+        'Schwaznagger',
+        'Schwazneger',
+        'Schwaznnager',
+        'Schwazzeneger',
+        'Schwazzenger',
+        'Schwazzinager',
+        'Schzwarnegger',
+        'Scwarrzenegger',
+        'Scwarzenager',
+        'Scwarzeneggar',
+        'Scwarzenneger',
+        'Scwharzanegger',
+        'Scwharzeneggar',
+        'Shwarsneger',
+        'Shwartaneger',
+        'Shwarteneger',
+        'Shwartinznegar',
+        'Shwartnierger',
+        'Shwartsnagger',
+        'Shwartzanager',
+        'Shwartzanegar',
+        'Shwartzaneger',
+        'Shwartzanegger',
+        'Shwartzenagor',
+        'Shwartzeneggar',
+        'Shwartzengar',
+        'Shwartzennegar',
+        'Shwartzganeger',
+        'Shwartznager',
+        'Shwartzneger',
+        'Shwarzanegger',
+        'Shwarzenagger',
+        'Shwarzenneger',
+        'Shwarznager',
+        'Shwaztsinager',
+        'Swarchneger',
+        'Swarchzinager',
+        'Swarchznegger',
+        'Swartenager',
+        'Swartenegger',
+        'Swartenzager',
+        'Swartiznager',
+        'Swartschenager',
+        'Swartseneger',
+        'Swartseneggar',
+        'Swartsenenger',
+        'Swartshanaiger',
+        'Swarttenegger',
+        'Swartz.',
+        'Swartzanagger',
+        'Swartzaneger',
+        'Swartzanegga',
+        'Swartzeigner',
+        'Swartzenagar',
+        'Swartzeneagar',
+        'Swartzenegar',
+        'Swartzenegher',
+        'Swartzengger',
+        'Swartzennager',
+        'Swartzennegar',
+        'Swartzenneger',
+        'Swartzerniger',
+        'Swartzinager',
+        'Swartzineggar',
+        'Swartznagger',
+        'Swartznegar',
+        'Swartzneggar',
+        'Swarzenaeger',
+        'Swarzenaggar',
+        'Swarzenaider',
+        'Swarzengger',
+        'Swarzneger',
+        'Swarznegger',
+        'Swarzshnegger',
+        'Swarzzeneggar',
+        'Swarzzenegger',
+        'Swatgnezzer',
+        'Swatz..',
+        'Swatzinagger',
+        'Swazenegger',
+        'Swazernager',
+        'Swchwartzignegeridknga',
+        'Swchwazaneger',
+        'Swertizager',
+        'Swertzeneggar',
+        'Swhartznegar',
+        'Switzenagger',
+        'Swiztinager',
+        'Swuartzenegar',
+        'Schwartzanagger',
+        'Schwartzennnnnnn',
+        'Schwarzenger',
+        'Swartasenegger',
+        'Swazenegar',
+    ]
+    b = 'Schwarzenegger'
+    for aa in a:
+        speed_test(aa, b)

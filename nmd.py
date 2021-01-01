@@ -137,6 +137,103 @@ def emd_1d_fast(locations_x: List[float], locations_y: List[float]) -> float:
         min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, locations_y)))
     return acc + min_cost
 
+def emd_1d_fast_v2(locations_x: List[float], locations_y: List[float]) -> float:
+    """
+    distance needed to move
+    todo: optimize worst case
+    """
+
+    # all inputs must be in the unit interval
+    assert all(0 <= x <= 1 for x in locations_x)
+    assert all(0 <= x <= 1 for x in locations_y)
+
+    # in our use case, there should be no duplicates in each list
+    assert len(locations_x) == len(set(locations_x))
+    assert len(locations_y) == len(set(locations_y))
+
+    # locations_1 will be the longer list
+    if len(locations_x) < len(locations_y):
+        locations_x, locations_y = locations_y, locations_x
+
+    # empty list, so just count the l1 items and exit early
+    if len(locations_y) == 0:
+        return len(locations_x)
+
+    # only one item, so take min distance and count the rest of the l1 items
+    if len(locations_y) == 1:
+        return min(abs(l1 - locations_y[0]) for l1 in locations_x) + len(locations_x) - 1
+
+    # # make a COPY of the list, sorted in reverse (descending order)
+    # # we'll be modifying in-place later, and we don't want to update the input
+    # locations_x = sorted(locations_x, reverse=True)
+    # locations_y = sorted(locations_y, reverse=True)
+
+    # accumulated distance as we simplify the problem
+    acc = 0
+
+    # # greedy-match constrained points with only one possible match (at the smaller end of locations_y)
+    # while locations_y and locations_x:
+    #     if locations_y[-1] <= locations_x[-1]:
+    #         acc += locations_x.pop(-1) - locations_y.pop(-1)
+    #     elif len(locations_x) >= 2 and (locations_y[-1] - locations_x[-1]) <= (locations_x[-2] - locations_y[-1]):
+    #         acc += locations_y.pop(-1) - locations_x.pop(-1)
+    #     else:
+    #         break
+    #
+    # # reverse both lists IN PLACE, so now they are sorted in ascending order
+    # locations_x.reverse()
+    # locations_y.reverse()
+    #
+    # # greedy-match constrained points with only one possible match (at the larger end of locations_y)
+    # while locations_y and locations_x:
+    #     if locations_y[-1] >= locations_x[-1]:
+    #         acc += locations_y.pop(-1) - locations_x.pop(-1)
+    #     elif len(locations_x) >= 2 and (locations_x[-1] - locations_y[-1]) <= (locations_y[-1] - locations_x[-2]):
+    #         acc += locations_x.pop(-1) - locations_y.pop(-1)
+    #     else:
+    #         break
+
+    # # remove any matching points in x and y
+    # # todo: do this before removing endpoints
+    # new_x = []
+    # new_y = []
+    # locations_x.reverse()
+    # locations_y.reverse()
+    # while locations_x and locations_y:
+    #     if locations_x[-1] < locations_y[-1]:
+    #         new_x.append(locations_x.pop(-1))
+    #     elif locations_x[-1] > locations_y[-1]:
+    #         new_y.append(locations_y.pop(-1))
+    #     else:
+    #         # discard duplicate
+    #         locations_x.pop(-1)
+    #         locations_y.pop(-1)
+    # if locations_x:
+    #     locations_x.reverse()
+    #     new_x.extend(locations_x)
+    # if locations_y:
+    #     locations_y.reverse()
+    #     new_y.extend(locations_y)
+    # locations_x = new_x
+    # locations_y = new_y
+    #
+    # # another chance to early exit
+    # if len(locations_y) == 0:
+    #     return acc + len(locations_x)
+    # if len(locations_y) == 1:
+    #     return acc + min(abs(x - locations_y[0]) for x in locations_x) + len(locations_x) - 1
+    #
+    # # there shouldn't be any duplicates across both lists now
+    # assert len(locations_x) + len(locations_y) == len(set(locations_x + locations_y))
+
+    # enumerate the options instead of recursing
+    # todo: actually build the bipartite graph to exclude impossible match options?
+    acc += len(locations_x) - len(locations_y)
+    min_cost = len(locations_y)
+    for x_combination in itertools.combinations(locations_x, len(locations_y)):
+        min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, locations_y)))
+    return acc + min_cost
+
 
 def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
     """
@@ -329,7 +426,7 @@ def emd_1d_slow(locations_x: List[float], locations_y: List[float]) -> float:
 
 def emd_1d(locations_x: List[float], locations_y: List[float]) -> float:
     # answer_1 = emd_1d_slow(locations_x, locations_y)
-    answer_1 = emd_1d_faster(locations_x, locations_y)
+    answer_1 = emd_1d_fast_v2(locations_x, locations_y)
     answer_2 = emd_1d_fast(locations_x, locations_y)
     assert abs(answer_1 - answer_2) < 0.00001, (answer_2, answer_1)
     return answer_2

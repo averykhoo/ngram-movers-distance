@@ -372,7 +372,7 @@ class ApproxWordList3:
         # count matching n-grams
         matches: Dict[int, List[float]] = dict()
         for n_idx, n in enumerate(self.__n_list):
-            n_grams = [f'\2{word}\3'[i:i + n] for i in range(len(word) - n + 3)]
+            n_grams = [f'\2{word}\3'[i:i + n] for i in range(len(word) + 3 - n)]
             n_gram_locations = dict()
             for idx, n_gram in enumerate(n_grams):
                 n_gram_locations.setdefault(n_gram, []).append(idx / (len(n_grams) - 1))

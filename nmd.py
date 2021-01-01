@@ -137,6 +137,7 @@ def emd_1d_fast(locations_x: List[float], locations_y: List[float]) -> float:
         min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, locations_y)))
     return acc + min_cost
 
+
 def emd_1d_fast_v2(locations_x: List[float], locations_y: List[float]) -> float:
     """
     distance needed to move
@@ -163,76 +164,16 @@ def emd_1d_fast_v2(locations_x: List[float], locations_y: List[float]) -> float:
     if len(locations_y) == 1:
         return min(abs(l1 - locations_y[0]) for l1 in locations_x) + len(locations_x) - 1
 
-    # # make a COPY of the list, sorted in reverse (descending order)
-    # # we'll be modifying in-place later, and we don't want to update the input
-    # locations_x = sorted(locations_x, reverse=True)
-    # locations_y = sorted(locations_y, reverse=True)
-
-    # accumulated distance as we simplify the problem
-    acc = 0
-
-    # # greedy-match constrained points with only one possible match (at the smaller end of locations_y)
-    # while locations_y and locations_x:
-    #     if locations_y[-1] <= locations_x[-1]:
-    #         acc += locations_x.pop(-1) - locations_y.pop(-1)
-    #     elif len(locations_x) >= 2 and (locations_y[-1] - locations_x[-1]) <= (locations_x[-2] - locations_y[-1]):
-    #         acc += locations_y.pop(-1) - locations_x.pop(-1)
-    #     else:
-    #         break
-    #
-    # # reverse both lists IN PLACE, so now they are sorted in ascending order
-    # locations_x.reverse()
-    # locations_y.reverse()
-    #
-    # # greedy-match constrained points with only one possible match (at the larger end of locations_y)
-    # while locations_y and locations_x:
-    #     if locations_y[-1] >= locations_x[-1]:
-    #         acc += locations_y.pop(-1) - locations_x.pop(-1)
-    #     elif len(locations_x) >= 2 and (locations_x[-1] - locations_y[-1]) <= (locations_y[-1] - locations_x[-2]):
-    #         acc += locations_x.pop(-1) - locations_y.pop(-1)
-    #     else:
-    #         break
-
-    # # remove any matching points in x and y
-    # # todo: do this before removing endpoints
-    # new_x = []
-    # new_y = []
-    # locations_x.reverse()
-    # locations_y.reverse()
-    # while locations_x and locations_y:
-    #     if locations_x[-1] < locations_y[-1]:
-    #         new_x.append(locations_x.pop(-1))
-    #     elif locations_x[-1] > locations_y[-1]:
-    #         new_y.append(locations_y.pop(-1))
-    #     else:
-    #         # discard duplicate
-    #         locations_x.pop(-1)
-    #         locations_y.pop(-1)
-    # if locations_x:
-    #     locations_x.reverse()
-    #     new_x.extend(locations_x)
-    # if locations_y:
-    #     locations_y.reverse()
-    #     new_y.extend(locations_y)
-    # locations_x = new_x
-    # locations_y = new_y
-    #
-    # # another chance to early exit
-    # if len(locations_y) == 0:
-    #     return acc + len(locations_x)
-    # if len(locations_y) == 1:
-    #     return acc + min(abs(x - locations_y[0]) for x in locations_x) + len(locations_x) - 1
-    #
-    # # there shouldn't be any duplicates across both lists now
-    # assert len(locations_x) + len(locations_y) == len(set(locations_x + locations_y))
+    # make a COPY of the list, sorted in reverse (descending order)
+    # we'll be modifying in-place later, and we don't want to update the input
+    locations_x = sorted(locations_x, reverse=True)
+    locations_y = sorted(locations_y, reverse=True)
 
     # enumerate the options instead of recursing
-    # todo: actually build the bipartite graph to exclude impossible match options?
-    acc += len(locations_x) - len(locations_y)
     min_cost = len(locations_y)
     for x_combination in itertools.combinations(locations_x, len(locations_y)):
         min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, locations_y)))
-    return acc + min_cost
+    return len(locations_x) - len(locations_y) + min_cost
 
 
 def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
@@ -424,277 +365,34 @@ def emd_1d_slow(locations_x: List[float], locations_y: List[float]) -> float:
     return 1 + min(emd_1d_slow(locations_x[:i] + locations_x[i + 1:], locations_y) for i in range(len(locations_x)))
 
 
+def emd_1d_slow_v2(locations_x: List[float], locations_y: List[float]) -> float:
+    if len(locations_x) < len(locations_y):
+        locations_x, locations_y = locations_y, locations_x
+
+    locations_x = sorted(locations_x)
+    locations_y = sorted(locations_y)
+
+    min_cost = len(locations_y)
+    for x_combination in itertools.combinations(locations_x, len(locations_y)):
+        min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, locations_y)))
+    return len(locations_x) - len(locations_y) + min_cost
+
+
 def emd_1d(locations_x: List[float], locations_y: List[float]) -> float:
-    # answer_1 = emd_1d_slow(locations_x, locations_y)
     answer_1 = emd_1d_fast_v2(locations_x, locations_y)
-    answer_2 = emd_1d_fast(locations_x, locations_y)
+    answer_2 = emd_1d_slow_v2(locations_x, locations_y)
     assert abs(answer_1 - answer_2) < 0.00001, (answer_2, answer_1)
     return answer_2
 
 
 if __name__ == '__main__':
-    a = [
-        'Schwartzenegger',
-        'Schwarzeneger',
-        'Schwarzenager',
-        'Schwartzenager',
-        'Schwartzeneger',
-        'Schwarzeneggar',
-        'Schwarzenneger',
-        'Swartzenegger',
-        'Swarzenegger',
-        'Schwarzenagger',
-        'Schwarznegger',
-        'Swartzenager',
-        'Schwarzanegger',
-        'Shwarzenegger',
-        'Schwartzenagger',
-        'Swartzeneger',
-        'Schwartznegger',
-        'Schwarzenegar',
-        'Shwartzenegger',
-        'Schwarzennegger',
-        'Schwarzennager',
-        'Schwartzanegger',
-        'Schwartzenneger',
-        'Schwarzanager',
-        'Schwarzengger',
-        'Schwarzennegar',
-        'Shwartzeneger',
-        'Schwartzeneggar',
-        'Schwarzneger',
-        'Schwarzneggar',
-        'Schwartzenegar',
-        'Schwartzneger',
-        'Schwazenegger',
-        'Shwartzenager',
-        'Swartzanegger',
-        'Swarzeneger',
-        'Swarzeneggar',
-        'Schwarenegger',
-        'Schwartzennager',
-        'Schwartzneggar',
-        'Shwarzeneger',
-        'Swartzeneggar',
-        'Swartznegger',
-        'Swarzenager',
-        'Swarzenagger',
-        'Scharzenegger',
-        'Schwarnegger',
-        'Schwartnegger',
-        'Schwartzanager',
-        'Schwartzaneger',
-        'Schwartzinager',
-        'Schwarzzenager',
-        'Shwarzenager',
-        'Swartzenagger',
-        'Swartzineger',
-        'Scharzeneger',
-        'Schwarnzenegger',
-        'Schwartenager',
-        'Schwartenegar',
-        'Schwarteneger',
-        'Schwartnegar',
-        'Schwartzanegar',
-        'Schwartzenger',
-        'Schwartzenggar',
-        'Schwartzineger',
-        'Schwartznager',
-        'Schwarzaneger',
-        'Schwarzaneggar',
-        'Schwarzanger',
-        'Schwarzenaeger',
-        'Schwarzeniger',
-        'Schwarzinager',
-        'Schwarznager',
-        'Schwarztenegger',
-        'Schwarzzeneger',
-        'Schwarzzenegger',
-        'Schwazenager',
-        'Schwazeneger',
-        'Scwartzenegger',
-        'Scwarzenegger',
-        'Shwartznegger',
-        'Shwarzenegar',
-        'Swarteneger',
-        'Swartzanager',
-        'Swartznager',
-        'Swartzneger',
-        'Swarzanegger',
-        'Swarzennager',
-        'Swarzenneger',
-        'Swazeneger',
-        'Schartzenager',
-        'Schartzennager',
-        'Schartznager',
-        'Scharwzeneger',
-        'Scharzenager',
-        'Schawarzneneger',
-        'Schawrknegger',
-        'Schazenegger',
-        'Schneckenger',
-        'Schrarznegger',
-        'Schrawzenneger',
-        'Schrwazeneggar',
-        'Schrwazenegger',
-        'Schrwtzanagger',
-        'Schsargdneger',
-        'Schwaranagger',
-        'Schwararzenegger',
-        'Schwarezenegger',
-        'Schwarganzer',
-        'Schwarnznegar',
-        'Schwarsanegger',
-        'Schwarsenagger',
-        'Schwarsnegger',
-        'Schwartaneger',
-        'Schwartenagger',
-        'Schwartenegger',
-        'Schwartenneger',
-        'Schwarterneger',
-        'Schwartineger',
-        'Schwartnager',
-        'Schwartnehar',
-        'Schwartsaneger',
-        'Schwartsinager',
-        'Schwartzaneggar',
-        'Schwartzanger',
-        'Schwartzeiojaweofjaweneger',
-        'Schwartzenagar',
-        'Schwartzenegget',
-        'Schwartzeneiger',
-        'Schwartzengar',
-        'Schwartzenkangaroo',
-        'Schwartzennegar',
-        'Schwartzinagger',
-        'Schwartzinegar',
-        'Schwartziniger',
-        'Schwartznagger',
-        'Schwartznegar',
-        'Schwarz',
-        'Schwarzamegger',
-        'Schwarzanagger',
-        'Schwarzatwizzler',
-        'Schwarzeggar',
-        'Schwarzegger',
-        'Schwarzenaega',
-        'Schwarzenagher',
-        'Schwarzeneeger',
-        'Schwarzenegor',
-        'Schwarzenenergy',
-        'Schwarzengeggar',
-        'Schwarzgenar',
-        'Schwarzinagger',
-        'Schwarzineggar',
-        'Schwarztenegar',
-        'Schwarzzanager',
-        'Schwatzeneggar',
-        'Schwatzenneger',
-        'Schwazenaeger',
-        'Schwazenegrr',
-        'Schwazerneger',
-        'Schwazinager',
-        'Schwaznagger',
-        'Schwazneger',
-        'Schwaznnager',
-        'Schwazzeneger',
-        'Schwazzenger',
-        'Schwazzinager',
-        'Schzwarnegger',
-        'Scwarrzenegger',
-        'Scwarzenager',
-        'Scwarzeneggar',
-        'Scwarzenneger',
-        'Scwharzanegger',
-        'Scwharzeneggar',
-        'Shwarsneger',
-        'Shwartaneger',
-        'Shwarteneger',
-        'Shwartinznegar',
-        'Shwartnierger',
-        'Shwartsnagger',
-        'Shwartzanager',
-        'Shwartzanegar',
-        'Shwartzaneger',
-        'Shwartzanegger',
-        'Shwartzenagor',
-        'Shwartzeneggar',
-        'Shwartzengar',
-        'Shwartzennegar',
-        'Shwartzganeger',
-        'Shwartznager',
-        'Shwartzneger',
-        'Shwarzanegger',
-        'Shwarzenagger',
-        'Shwarzenneger',
-        'Shwarznager',
-        'Shwaztsinager',
-        'Swarchneger',
-        'Swarchzinager',
-        'Swarchznegger',
-        'Swartenager',
-        'Swartenegger',
-        'Swartenzager',
-        'Swartiznager',
-        'Swartschenager',
-        'Swartseneger',
-        'Swartseneggar',
-        'Swartsenenger',
-        'Swartshanaiger',
-        'Swarttenegger',
-        'Swartz.',
-        'Swartzanagger',
-        'Swartzaneger',
-        'Swartzanegga',
-        'Swartzeigner',
-        'Swartzenagar',
-        'Swartzeneagar',
-        'Swartzenegar',
-        'Swartzenegher',
-        'Swartzengger',
-        'Swartzennager',
-        'Swartzennegar',
-        'Swartzenneger',
-        'Swartzerniger',
-        'Swartzinager',
-        'Swartzineggar',
-        'Swartznagger',
-        'Swartznegar',
-        'Swartzneggar',
-        'Swarzenaeger',
-        'Swarzenaggar',
-        'Swarzenaider',
-        'Swarzengger',
-        'Swarzneger',
-        'Swarznegger',
-        'Swarzshnegger',
-        'Swarzzeneggar',
-        'Swarzzenegger',
-        'Swatgnezzer',
-        'Swatz..',
-        'Swatzinagger',
-        'Swazenegger',
-        'Swazernager',
-        'Swchwartzignegeridknga',
-        'Swchwazaneger',
-        'Swertizager',
-        'Swertzeneggar',
-        'Swhartznegar',
-        'Switzenagger',
-        'Swiztinager',
-        'Swuartzenegar',
-        'Schwartzanagger',
-        'Schwartzennnnnnn',
-        'Schwarzenger',
-        'Swartasenegger',
-        'Swazenegar',
-    ]
-    b = 'Schwarzenegger'
 
-    print(n_gram_emd('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
+    # print(n_gram_emd('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
     print(n_gram_emd('banana', 'bababanananananananana'))
     print(n_gram_emd('banana', 'bababanananananananananna'))
     print(n_gram_emd('banana', 'nanananananabababa'))
+    print(n_gram_emd('banana', 'banana'))
+    print(n_gram_emd('nanananananabababa', 'banana'))
     print(n_gram_emd('banana', 'bababananananananananannanananananananana'))
     print(n_gram_emd('banana', 'bababananananananananannananananananananananananananannanananananananana'))
     print(n_gram_emd('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))

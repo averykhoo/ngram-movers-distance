@@ -214,16 +214,6 @@ def emd_1d_faster(locations_x: Sequence[Union[int, float]],
     return acc
 
 
-def emd_1d_slow(locations_x: List[float], locations_y: List[float]) -> float:
-    if len(locations_x) < len(locations_y):
-        return emd_1d_slow(locations_y, locations_x)
-
-    if len(locations_x) == len(locations_y):
-        return sum(abs(l1 - l2) for l1, l2 in zip(sorted(locations_x), sorted(locations_y)))
-
-    return 1 + min(emd_1d_slow(locations_x[:i] + locations_x[i + 1:], locations_y) for i in range(len(locations_x)))
-
-
 def emd_1d_slow_v2(locations_x: List[float], locations_y: List[float]) -> float:
     if len(locations_x) < len(locations_y):
         locations_x, locations_y = locations_y, locations_x
@@ -245,32 +235,31 @@ def emd_1d(locations_x: List[float], locations_y: List[float]) -> float:
 
 
 if __name__ == '__main__':
-
     emd_1d([0.0, 0.25], [0.0, 0.14285714285714285, 0.2857142857142857, 0.42857142857142855, 0.42857142857142855])
 
-    # print(n_gram_emd('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
-    # print(n_gram_emd('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
-    # print(n_gram_emd('banana', 'bababanananananananana'))
-    # print(n_gram_emd('banana', 'bababanananananananananna'))
-    # print(n_gram_emd('banana', 'nanananananabababa'))
-    # print(n_gram_emd('banana', 'banana'))
-    # print(n_gram_emd('nanananananabababa', 'banana'))
-    # print(n_gram_emd('banana', 'bababananananananananannanananananananana'))
-    # print(n_gram_emd('banana', 'bababananananananananannananananananananananananananannanananananananana'))
-    # print(n_gram_emd('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
+    print(n_gram_emd('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
+    print(n_gram_emd('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
+    print(n_gram_emd('banana', 'bababanananananananana'))
+    print(n_gram_emd('banana', 'bababanananananananananna'))
+    print(n_gram_emd('banana', 'nanananananabababa'))
+    print(n_gram_emd('banana', 'banana'))
+    print(n_gram_emd('nanananananabababa', 'banana'))
+    print(n_gram_emd('banana', 'bababananananananananannanananananananana'))
+    print(n_gram_emd('banana', 'bababananananananananannananananananananananananananannanananananananana'))
+    print(n_gram_emd('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
 
-    num_x = 3
-    num_y = 7
-
-    xs = [i / (num_x - 1) for i in range(num_x)]
-    ys = [i / (num_y - 1) for i in range(num_y)]
-    print(xs)
-    print(ys)
-    xs = xs + xs + xs + xs
-
-    for x_len in range(len(xs) + 1):
-        for y_len in range(len(ys) + 1):
-            print(x_len, y_len)
-            for x_combi in itertools.combinations(xs, x_len):
-                for y_combi in itertools.combinations(ys, y_len):
-                    assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
+    # num_x = 3
+    # num_y = 7
+    #
+    # xs = [i / (num_x - 1) for i in range(num_x)]
+    # ys = [i / (num_y - 1) for i in range(num_y)]
+    # print(xs)
+    # print(ys)
+    # xs = xs + xs + xs + xs
+    #
+    # for x_len in range(len(xs) + 1):
+    #     for y_len in range(len(ys) + 1):
+    #         print(x_len, y_len)
+    #         for x_combi in itertools.combinations(xs, x_len):
+    #             for y_combi in itertools.combinations(ys, y_len):
+    #                 assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)

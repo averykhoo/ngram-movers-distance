@@ -113,7 +113,7 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
     while locations_y and locations_x:
         if locations_y[-1] >= locations_x[-1]:
             acc += locations_y.pop(-1) - locations_x.pop(-1)
-        elif len(locations_x) >= 2 and (locations_x[-1] - locations_y[-1]) <= (locations_y[-1] - locations_x[-2]):
+        elif len(locations_x) >= 2 and abs(locations_x[-1] - locations_y[-1]) <= abs(locations_y[-1] - locations_x[-2]):
             acc += locations_x.pop(-1) - locations_y.pop(-1)
         else:
             break
@@ -180,7 +180,7 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
     while component_ranges:
         left, right = component_ranges.pop(-1)
         while component_ranges and component_ranges[-1][0] <= right:
-            _, right = component_ranges.pop(-1)
+            right = max(right, component_ranges.pop(-1)[1])
 
         # count unmatched points since last seen
         if left > last_seen + 1:
@@ -249,13 +249,27 @@ def emd_1d(locations_x: List[float], locations_y: List[float]) -> float:
 
 
 if __name__ == '__main__':
-    print(n_gram_emd('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
-    print(n_gram_emd('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
-    print(n_gram_emd('banana', 'bababanananananananana'))
-    print(n_gram_emd('banana', 'bababanananananananananna'))
-    print(n_gram_emd('banana', 'nanananananabababa'))
-    print(n_gram_emd('banana', 'banana'))
-    print(n_gram_emd('nanananananabababa', 'banana'))
-    print(n_gram_emd('banana', 'bababananananananananannanananananananana'))
-    print(n_gram_emd('banana', 'bababananananananananannananananananananananananananannanananananananana'))
-    print(n_gram_emd('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
+
+    # print(n_gram_emd('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
+    # print(n_gram_emd('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
+    # print(n_gram_emd('banana', 'bababanananananananana'))
+    # print(n_gram_emd('banana', 'bababanananananananananna'))
+    # print(n_gram_emd('banana', 'nanananananabababa'))
+    # print(n_gram_emd('banana', 'banana'))
+    # print(n_gram_emd('nanananananabababa', 'banana'))
+    # print(n_gram_emd('banana', 'bababananananananananannanananananananana'))
+    # print(n_gram_emd('banana', 'bababananananananananannananananananananananananananannanananananananana'))
+    # print(n_gram_emd('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
+
+    num_x = 12
+    num_y = 11
+
+    xs = [i / num_x for i in range(num_x + 1)]
+    ys = [i / num_y for i in range(num_y + 1)]
+
+    for x_len in range(num_x + 1):
+        for y_len in range(num_y + 1):
+            print(x_len, y_len)
+            for x_combi in itertools.combinations(xs, x_len):
+                for y_combi in itertools.combinations(ys, y_len):
+                    assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)

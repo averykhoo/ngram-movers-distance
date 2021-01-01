@@ -1,5 +1,4 @@
 import itertools
-from typing import List
 from typing import Sequence
 from typing import Union
 
@@ -221,7 +220,7 @@ def emd_1d_faster(locations_x: Sequence[Union[int, float]],
     return acc
 
 
-def emd_1d_slow_v2(locations_x: List[float], locations_y: List[float]) -> float:
+def emd_1d_slow_v2(locations_x: Sequence[float], locations_y: Sequence[float]) -> float:
     if len(locations_x) < len(locations_y):
         locations_x, locations_y = locations_y, locations_x
 
@@ -234,7 +233,7 @@ def emd_1d_slow_v2(locations_x: List[float], locations_y: List[float]) -> float:
     return len(locations_x) - len(locations_y) + min_cost
 
 
-def emd_1d(locations_x: List[float], locations_y: List[float]) -> float:
+def emd_1d(locations_x: Sequence[float], locations_y: Sequence[float]) -> float:
     answer_fast = emd_1d_faster(locations_x, locations_y)
     answer_slow = emd_1d_slow_v2(locations_x, locations_y)
     assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)

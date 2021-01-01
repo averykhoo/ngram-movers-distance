@@ -4,9 +4,9 @@ from typing import Sequence
 from typing import Union
 
 
-def speed_test(word_1: str, word_2: str, n: int = 2):
-    levenshteinDistance(word_1, word_2)
-    dameraulevenshtein(word_1, word_2)
+def speed_test(word_1: str, word_2: str):
+    edit_distance(word_1, word_2)
+    damerau_levenshtein_distance(word_1, word_2)
 
     return n_gram_emd(word_1, word_2)
 
@@ -241,7 +241,7 @@ def emd_1d(locations_x: List[float], locations_y: List[float]) -> float:
     return answer_fast
 
 
-def levenshteinDistance(s1, s2):
+def edit_distance(s1, s2):
     if len(s1) > len(s2):
         s1, s2 = s2, s1
 
@@ -257,7 +257,7 @@ def levenshteinDistance(s1, s2):
     return distances[-1]
 
 
-def dameraulevenshtein(seq1, seq2):
+def damerau_levenshtein_distance(seq1, seq2):
     """Calculate the Damerau-Levenshtein distance between sequences.
 
     This distance is the number of additions, deletions, substitutions,
@@ -271,13 +271,13 @@ def dameraulevenshtein(seq1, seq2):
     This implementation is O(N*M) time and O(M) space, for N and M the
     lengths of the two sequences.
 
-    >>> dameraulevenshtein('ba', 'abc')
+    >>> damerau_levenshtein_distance('ba', 'abc')
     2
-    >>> dameraulevenshtein('fee', 'deed')
+    >>> damerau_levenshtein_distance('fee', 'deed')
     2
 
     It works with arbitrary sequences too:
-    >>> dameraulevenshtein('abcd', ['b', 'a', 'c', 'd', 'e'])
+    >>> damerau_levenshtein_distance('abcd', ['b', 'a', 'c', 'd', 'e'])
     2
     """
     # codesnippet:D0DE4716-B6E6-4161-9219-2903BF8F547F

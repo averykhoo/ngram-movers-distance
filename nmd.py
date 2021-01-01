@@ -190,16 +190,17 @@ def emd_1d_faster(locations_x: List[float], locations_y: List[float]) -> float:
         connected_x = [idx for idx, is_y in locations[left:right + 1] if not is_y]
         connected_y = [idx for idx, is_y in locations[left:right + 1] if is_y]
 
-        # todo: greedy match endpoints (again)?
+        # todo: greedy match endpoints again?
 
-        # todo: try to greedy-match unshared points (must match all points in this component)?
+        # todo: try to greedy-match unshared points?
+        # must match all points in this component
         # [x1 y1 ... x2 ...]       ==> if x1y1 < y1x2, then y1 -> x1
         # [... x3 x4 y1 x5 x6 ...] ==> y1 can only match x4 or x5 (assuming there are no y-chains)
         # if it succeeds, then remove the component
 
-        # todo: actually build the bipartite graph to exclude impossible match options?
+        # todo: actually build a bipartite graph to exclude impossible match options?
 
-        # enumerate the options instead of recursing
+        # enumerate all possible matches for this connected component
         acc += len(connected_x) - len(connected_y)
         if connected_y:
             min_cost = len(connected_y)

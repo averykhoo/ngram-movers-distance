@@ -236,8 +236,8 @@ def emd_1d_slow_v2(locations_x: List[float], locations_y: List[float]) -> float:
 
 def emd_1d(locations_x: List[float], locations_y: List[float]) -> float:
     answer_fast = emd_1d_faster(locations_x, locations_y)
-    # answer_slow = emd_1d_slow_v2(locations_x, locations_y)
-    # assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
+    answer_slow = emd_1d_slow_v2(locations_x, locations_y)
+    assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
     return answer_fast
 
 
@@ -304,6 +304,23 @@ def dameraulevenshtein(seq1, seq2):
 
 
 if __name__ == '__main__':
+
+    num_x = 4
+    num_y = 7
+
+    xs = [i / (num_x - 1) for i in range(num_x)]
+    ys = [i / (num_y - 1) for i in range(num_y)]
+    print(xs)
+    print(ys)
+    xs = xs + xs + xs
+
+    for x_len in range(len(xs) + 1):
+        for y_len in range(len(ys) + 1):
+            print(x_len, y_len)
+            for x_combi in itertools.combinations(xs, x_len):
+                for y_combi in itertools.combinations(ys, y_len):
+                    assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
+
     print(speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
     print(speed_test('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
     print(speed_test('banana', 'bababanananananananana'))
@@ -314,22 +331,6 @@ if __name__ == '__main__':
     print(speed_test('banana', 'bababananananananananannanananananananana'))
     print(speed_test('banana', 'bababananananananananannananananananananananananananannanananananananana'))
     print(speed_test('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana'))
-
-    # num_x = 3
-    # num_y = 7
-    #
-    # xs = [i / (num_x - 1) for i in range(num_x)]
-    # ys = [i / (num_y - 1) for i in range(num_y)]
-    # print(xs)
-    # print(ys)
-    # xs = xs + xs + xs + xs
-    #
-    # for x_len in range(len(xs) + 1):
-    #     for y_len in range(len(ys) + 1):
-    #         print(x_len, y_len)
-    #         for x_combi in itertools.combinations(xs, x_len):
-    #             for y_combi in itertools.combinations(ys, y_len):
-    #                 assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
 
     a = [
         'Schwartzenegger',

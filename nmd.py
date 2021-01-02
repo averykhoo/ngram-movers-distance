@@ -9,42 +9,45 @@ def speed_test(word_1: str, word_2: str):
     return n_gram_emd(word_1, word_2)
 
 
-def n_gram_emd(word_1: str, word_2: str, n: int = 2):
+def n_gram_emd(word_1: str,
+               word_2: str,
+               n: int = 2,
+               ) -> float:
     # sanity checks
     assert isinstance(word_1, str) and '\2' not in word_1 and '\3' not in word_1
     assert isinstance(word_2, str) and '\2' not in word_2 and '\3' not in word_2
     assert isinstance(n, int) and n >= 2
 
-    # generate n-grams
-    n_grams_1 = [f'\2{word_1}\3'[i:i + n] for i in range(len(word_1) - n + 3)]
-    n_grams_2 = [f'\2{word_2}\3'[i:i + n] for i in range(len(word_2) - n + 3)]
+    # add START_TEXT and END_TEXT markers to each word
+    # https://en.wikipedia.org/wiki/Control_character#Transmission_control
+    word_1 = f'\2{word_1}\3'
+    word_2 = f'\2{word_2}\3'
 
+    # generate n_gram indices and index their locations
     n_gram_locations_1 = dict()
-    for idx, n_gram in enumerate(n_grams_1):
-        n_gram_locations_1.setdefault(n_gram, []).append(idx / (len(n_grams_1) - 1))
-
+    max_idx = len(word_1) - n
+    for idx in range(max_idx + 1):
+        n_gram_locations_1.setdefault(word_1[idx:idx + n], []).append(idx / max_idx)
     n_gram_locations_2 = dict()
-    for idx, n_gram in enumerate(n_grams_2):
-        n_gram_locations_2.setdefault(n_gram, []).append(idx / (len(n_grams_2) - 1))
+    max_idx = len(word_2) - n
+    for idx in range(max_idx + 1):
+        n_gram_locations_2.setdefault(word_2[idx:idx + n], []).append(idx / max_idx)
 
-    distance = 0
-    total = 0
-    for n_gram, locations in n_gram_locations_1.items():
-        total += len(locations)
-        if n_gram not in n_gram_locations_2:
-            distance += len(locations)
-    for n_gram, locations in n_gram_locations_2.items():
-        total += len(locations)
-        if n_gram not in n_gram_locations_1:
-            distance += len(locations)
-        else:
-            # print(n_gram, locations, n_gram_locations_1[n_gram])
-            distance += emd_1d(locations, n_gram_locations_1[n_gram])
+    # we want to calculate the earth mover distance for all n-grams in both words
+    # > distance = sum(emd_1d(n_gram_locations_1.get(n_gram, []), n_gram_locations_2.get(n_gram, []))
+    # >                for n_gram in set(n_gram_locations_1).union(set(n_gram_locations_2)))
+    # this could be optimized by only calculating emd for n-grams in common and just counting the symmetric difference
+    # but calculating similarity is faster than that, so instead we calculate the similarity then find distance using:
+    # > distance = len(original_word_1) + len(original_word_2) + (6 - 2 * n) - similarity
+    similarity = 0
+    for n_gram, locations_1 in n_gram_locations_1.items():
+        if n_gram in n_gram_locations_2:
+            similarity += len(locations_1) + len(n_gram_locations_2[n_gram])
+            similarity -= emd_1d(locations_1, n_gram_locations_2[n_gram])
 
-    # just check that we saw the right total number of ngrams
-    assert total == len(word_1) + len(word_2) - 2 * n + 6
-
-    return distance
+    # return distance
+    # notice that theres +2 instead of +6 because both words now have additional START and END flags
+    return len(word_1) + len(word_2) + 2 - 2 * n - similarity
 
 
 def emd_1d_faster(locations_x: Sequence[Union[int, float]],
@@ -252,8 +255,8 @@ def emd_1d_slow_v2(locations_x: Sequence[float], locations_y: Sequence[float]) -
 
 def emd_1d(locations_x: Sequence[float], locations_y: Sequence[float]) -> float:
     answer_fast = emd_1d_faster(locations_x, locations_y)
-    answer_slow = emd_1d_slow_v2(locations_x, locations_y)
-    assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
+    # answer_slow = emd_1d_slow_v2(locations_x, locations_y)
+    # assert abs(answer_fast - answer_slow) < 0.00001, (answer_slow, answer_fast, locations_x, locations_y)
     return answer_fast
 
 
@@ -321,21 +324,21 @@ def damerau_levenshtein_distance(seq1, seq2):
 
 if __name__ == '__main__':
 
-    num_x = 4
-    num_y = 7
-
-    xs = [i / (num_x - 1) for i in range(num_x)]
-    ys = [i / (num_y - 1) for i in range(num_y)]
-    print(xs)
-    print(ys)
-    xs = xs + xs + xs
-
-    for x_len in range(len(xs) + 1):
-        for y_len in range(len(ys) + 1):
-            print(x_len, y_len)
-            for x_combi in itertools.combinations(xs, x_len):
-                for y_combi in itertools.combinations(ys, y_len):
-                    assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
+    # num_x = 4
+    # num_y = 7
+    #
+    # xs = [i / (num_x - 1) for i in range(num_x)]
+    # ys = [i / (num_y - 1) for i in range(num_y)]
+    # print(xs)
+    # print(ys)
+    # xs = xs + xs + xs
+    #
+    # for x_len in range(len(xs) + 1):
+    #     for y_len in range(len(ys) + 1):
+    #         print(x_len, y_len)
+    #         for x_combi in itertools.combinations(xs, x_len):
+    #             for y_combi in itertools.combinations(ys, y_len):
+    #                 assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
 
     for _ in range(1000):
         speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')

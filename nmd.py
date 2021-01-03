@@ -110,6 +110,7 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
         return float(min(abs(x - positions_y[0]) for x in positions_x) + len(positions_x) - 1)
 
     # now is the hard part of the algorithm, matching possible points from both lists
+    # [x1 y1 x2 x3 x4 y2 x3] ==> [x1 y1 x2], [x4 y2 x5] (x3 can never be matched)
     # we'll break the x-y matching problem into sub-problems which can be solved separately
     # the obvious thing to do is to build a bipartite graph and look for connected components
     # but implementing the full graph building and separation algorithm would eat too many cpu cycles
@@ -119,7 +120,7 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
     locations = sorted([(loc, False) for loc in positions_x] + [(loc, True) for loc in positions_y])
     component_ranges = []
 
-    # get ranges of forward possible alignments
+    # get ranges of FORWARD possible alignments
     n = 0
     current_left = None
     for idx, (loc, is_y) in enumerate(locations):
@@ -135,7 +136,7 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
     if current_left is not None:  # current_left could be 0, so don't just test truthiness
         component_ranges.append((current_left, len(locations) - 1))
 
-    # get ranges of backward possible alignments
+    # get ranges of BACKWARD possible alignments
     n = 0
     current_right = None
     for idx in range(len(locations) - 1, -1, -1):
@@ -151,27 +152,27 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
     if current_right is not None:
         component_ranges.append((0, current_right))
 
-    # we'll now start to accumulate distance as we simplify the problem
+    # we'll accumulate distance as we simplify the problem
     distance = 0.0
 
     # merge ranges to get the sets of connected components
-    # [x1 y1 x2 x3 x4 y2 x3] ==> [x1 y1 x2], [x4 y2 x5] (x3 can never be matched)
     component_ranges = sorted(component_ranges, reverse=True)
     last_seen = -1
     while component_ranges:
+        # take the first range, then keep taking overlapping ranges
         left, right = component_ranges.pop(-1)
         while component_ranges and component_ranges[-1][0] <= right:
-            right = max(right, component_ranges.pop(-1)[1])
+            right = max(right, component_ranges.pop(-1)[1])  # range can be a proper subset
 
         # count unmatched points since last seen
         if left > last_seen + 1:
             distance += left - last_seen - 1  # count unmatchable points
 
-        # split into x and y lists again
+        # split the range into x and y lists again, in reverse (descending order)
         connected_x = [idx for idx, is_y in locations[right:left - 1 if left else None:-1] if not is_y]
         connected_y = [idx for idx, is_y in locations[right:left - 1 if left else None:-1] if is_y]
 
-        # greedy-match constrained points with only one possible match (at the smaller end of connected_y)
+        # greedy-match constrained points with only one possible match at the SMALLER end of connected_y
         while connected_y and connected_x:
             # if y_min <= x_min, then they must be paired
             if connected_y[-1] <= connected_x[-1]:
@@ -192,8 +193,8 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
         connected_x.reverse()
         connected_y.reverse()
 
-        # greedy-match constrained points with only one possible match (at the larger end of connected_y)
-        while connected_y and connected_x:
+        # greedy-match constrained points with only one possible match at the LARGER end of connected_y
+        while connected_x and connected_y:
             # if y_max >= x_max, then they must be paired
             if connected_y[-1] >= connected_x[-1]:
                 distance += connected_y.pop(-1) - connected_x.pop(-1)
@@ -209,14 +210,6 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
             else:
                 break
 
-        # todo: try to greedy-match unshared points?
-        # must match all points in this component
-        # [x1 y1 ... x2 ...]       ==> if x1y1 < y1x2, then y1 -> x1
-        # [... x3 x4 y1 x5 x6 ...] ==> y1 can only match x4 or x5 (assuming there are no y-chains)
-        # if it succeeds, then remove the component
-
-        # todo: actually build a bipartite graph to exclude impossible match options?
-
         # try for early exit, because itertools.combinations is slow
         if len(connected_y) == 0:
             distance += len(connected_x)
@@ -225,6 +218,8 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
 
         # enumerate all possible matches for this connected component
         # this code block works even if connected_y is empty
+        # possible: actually build the bipartite graph to exclude impossible match options?
+        # also possible: try to greedy-match unshared points? (greedy match must succeed for all y)
         else:
             min_cost = len(connected_y)
             for x_combination in itertools.combinations(connected_x, len(connected_y)):
@@ -346,25 +341,25 @@ def damerau_levenshtein_distance(seq1, seq2):
 
 
 if __name__ == '__main__':
-    num_x = 4
-    num_y = 9
-
-    xs = [i / (num_x - 1) for i in range(num_x)]
-    ys = [i / (num_y - 1) for i in range(num_y)]
-    print(xs)
-    print(ys)
-    xs = xs + xs + xs
-
-    for x_len in range(len(xs) + 1):
-        for y_len in range(len(ys) + 1):
-            print(x_len, y_len)
-            for x_combi in itertools.combinations(xs, x_len):
-                for y_combi in itertools.combinations(ys, y_len):
-                    assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
+    # num_x = 3
+    # num_y = 7
+    #
+    # xs = [i / (num_x - 1) for i in range(num_x)]
+    # ys = [i / (num_y - 1) for i in range(num_y)]
+    # print(xs)
+    # print(ys)
+    # xs = xs + xs + xs
+    #
+    # for x_len in range(len(xs) + 1):
+    #     for y_len in range(len(ys) + 1):
+    #         print(x_len, y_len)
+    #         for x_combi in itertools.combinations(xs, x_len):
+    #             for y_combi in itertools.combinations(ys, y_len):
+    #                 assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
 
     for _ in range(1000):
-        # speed_test('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        #            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+        speed_test('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
         speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
         speed_test('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
         speed_test('banana', 'bababanananananananana')

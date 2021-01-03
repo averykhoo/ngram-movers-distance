@@ -6,8 +6,8 @@ from typing import Optional
 from typing import Tuple
 from typing import Union
 
-from nmd import damerau_levenshtein_distance as dld
-from nmd import edit_distance as ed
+from levenshtein import damerau_levenshtein_distance as dld
+from levenshtein import edit_distance as ed
 from nmd import emd_1d
 
 

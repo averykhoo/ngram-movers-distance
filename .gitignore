@@ -140,9 +140,3 @@ dmypy.json
 cython_debug/
 
 .idea/
-*.bin
-*.big.csv
-*.big.tsv
-*.big.json
-*.big.txt
-*.big.xml

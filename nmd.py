@@ -173,7 +173,7 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
         connected_y = [idx for idx, is_y in locations[right:left - 1 if left else None:-1] if is_y]
 
         # greedy-match constrained points with only one possible match at the SMALLER end of connected_y
-        while connected_y and connected_x:
+        while connected_y:  # don't need to check connected_x since it cannot be shorter than y
             # if y_min <= x_min, then they must be paired
             if connected_y[-1] <= connected_x[-1]:
                 distance += connected_x.pop(-1) - connected_y.pop(-1)
@@ -194,7 +194,7 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
         connected_y.reverse()
 
         # greedy-match constrained points with only one possible match at the LARGER end of connected_y
-        while connected_x and connected_y:
+        while connected_y:
             # if y_max >= x_max, then they must be paired
             if connected_y[-1] >= connected_x[-1]:
                 distance += connected_y.pop(-1) - connected_x.pop(-1)

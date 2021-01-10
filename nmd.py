@@ -1,9 +1,21 @@
 import itertools
+from functools import lru_cache
+from typing import List
 from typing import Sequence
 from typing import Union
 
 from levenshtein import damerau_levenshtein_distance
 from levenshtein import edit_distance
+
+
+@lru_cache(maxsize=0xFFFF)
+def get_n_grams(word: str,
+            n: int,
+            _start: str = '\2',
+            _end: str = '\3',
+            ) -> List[str]:
+    word = f'{_start}{word}{_end}'
+    return [word[idx:idx + n] for idx in range(len(word) - n + 1)]
 
 
 def speed_test(word_1: str, word_2: str):

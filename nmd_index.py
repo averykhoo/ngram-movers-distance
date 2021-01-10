@@ -1,5 +1,6 @@
 import time
 from collections import Counter
+from functools import lru_cache
 from typing import Dict
 from typing import Iterable
 from typing import List
@@ -10,7 +11,16 @@ from typing import Union
 from levenshtein import damerau_levenshtein_distance as dld
 from levenshtein import edit_distance as ed
 from nmd import emd_1d
-from nmd import get_n_grams
+
+
+@lru_cache(maxsize=0xFFFF)
+def get_n_grams(word: str,
+                n: int,
+                _start: str = '\2',
+                _end: str = '\3',
+                ) -> List[str]:
+    word = f'{_start}{word}{_end}'
+    return [word[idx:idx + n] for idx in range(len(word) - n + 1)]
 
 
 class ApproxWordList3:
@@ -250,29 +260,31 @@ class ApproxWordList4:
 
         return self
 
-    def __lookup(self, word: str,
+    def __lookup(self,
+                 word: str,
                  dim: Union[int, float] = 1,
                  top_k: int = 10,
                  ) -> Counter:
+        num_n = len(self.__n_list)
+
         # count matching n-grams
         min_scores: Dict[int, List[int]] = dict()
         for n_idx, n in enumerate(self.__n_list):
-            n_grams = get_n_grams(word, n)
-
-            for n_gram, count in Counter(n_grams).items():
+            for n_gram, count in Counter(get_n_grams(word, n)).items():
                 for other_word_index, other_locations in self.__n_gram_indices.get(n_gram, []):
-                    word_scores = min_scores.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
+                    word_scores = min_scores.setdefault(other_word_index, [0 for _ in range(num_n)])
                     word_scores[n_idx] += min(count, len(other_locations))
 
-        # get max and min possible scores per word
-        _scores = [(sum(x ** dim for x in scores) / len(scores)) ** (1 / dim) for scores in min_scores.values()]
+        # get min possible score per word
+        _scores = [(sum(x ** dim for x in scores) / num_n) ** (1 / dim) for scores in min_scores.values()]
         _scores.sort(reverse=True)
         min_acceptable_score = _scores[min(top_k, len(_scores)) - 1]
 
-        # filter to possible top_k
+        # filter to possible top_k by max possible score
+        # max score per n-gram is exactly 2x min possible score
         possible_word_indices = set()
         for word_index, scores in min_scores.items():
-            if (sum(x ** dim for x in scores) / len(scores)) ** (1 / dim) >= min_acceptable_score:
+            if (sum((x + x) ** dim for x in scores) / num_n) ** (1 / dim) >= min_acceptable_score:
                 possible_word_indices.add(word_index)
 
         # count matching n-grams
@@ -287,7 +299,7 @@ class ApproxWordList4:
                 for other_word_index, other_locations in self.__n_gram_indices.get(n_gram, []):
                     if other_word_index not in possible_word_indices:
                         continue
-                    word_scores = matches.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
+                    word_scores = matches.setdefault(other_word_index, [0 for _ in range(num_n)])
                     # should be sum not max, but this is easier to deal with
                     word_scores[n_idx] += max(len(locations), len(other_locations)) - emd_1d(locations, other_locations)
 
@@ -298,7 +310,7 @@ class ApproxWordList4:
             matches[other_word_index] = norm_scores
 
         # average the similarity scores
-        return Counter({word_index: (sum(x ** dim for x in scores) / len(scores)) ** (1 / dim)
+        return Counter({word_index: (sum(x ** dim for x in scores) / num_n) ** (1 / dim)
                         for word_index, scores in matches.items()})
 
     def lookup(self, word: str, top_k: int = 10, dim: Union[int, float] = 1):
@@ -307,6 +319,10 @@ class ApproxWordList4:
             raise TypeError(word)
         if len(word) == 0:
             raise ValueError(word)
+        if not isinstance(top_k, int):
+            raise TypeError(top_k)
+        if top_k <= 0:
+            raise ValueError(top_k)
 
         if self.__case_insensitive:
             word = word.casefold()
@@ -314,23 +330,18 @@ class ApproxWordList4:
         assert '\2' not in word and '\3' not in word, word
 
         # average the similarity scores
-        counter = self.__lookup(word, dim, top_k)
-        _, top_score = counter.most_common(1)[0]
-
-        # # return only top_k results if specified (and non-zero), otherwise return all results
-        # if not top_k or top_k < 0:
-        #     top_k = len(counter)
+        word_scores = self.__lookup(word, dim, top_k).most_common()
 
         # also return edit distances for debugging
         out = [(self.__vocabulary[word_index], round(match_score, 3),
                 dld(word, self.__vocabulary[word_index]),
                 ed(word, self.__vocabulary[word_index]),
                 )
-               for word_index, match_score in counter.most_common(top_k * 2)
-               if (match_score >= top_score * 0.9) or dld(word, self.__vocabulary[word_index]) <= 1]
+               for word_index, match_score in word_scores
+               if (match_score >= word_scores[0][1] * 0.9) or dld(word, self.__vocabulary[word_index]) <= 1]
 
         print(time.time() - t)
-        return out[:top_k]
+        return out
 
 
 if __name__ == '__main__':

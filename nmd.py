@@ -27,6 +27,8 @@ def speed_test(word_1: str, word_2: str):
 def n_gram_emd(word_1: str,
                word_2: str,
                n: int = 2,
+               invert: bool = False,
+               normalize: bool = False,
                ) -> float:
     # sanity checks
     assert isinstance(word_1, str) and '\2' not in word_1 and '\3' not in word_1
@@ -38,31 +40,36 @@ def n_gram_emd(word_1: str,
     word_1 = f'\2{word_1}\3'
     word_2 = f'\2{word_2}\3'
 
+    # number of n-grams per word
+    num_grams_1 = len(word_1) - n + 1
+    num_grams_2 = len(word_1) - n + 1
+
     # generate n_gram indices and index their locations
     n_gram_locations_1 = dict()
-    max_idx = len(word_1) - n
-    for idx in range(max_idx + 1):
-        n_gram_locations_1.setdefault(word_1[idx:idx + n], []).append(idx / max_idx)
+    for idx in range(num_grams_1):
+        n_gram_locations_1.setdefault(word_1[idx:idx + n], []).append(idx / (num_grams_1 - 1))
     n_gram_locations_2 = dict()
-    max_idx = len(word_2) - n
-    for idx in range(max_idx + 1):
-        n_gram_locations_2.setdefault(word_2[idx:idx + n], []).append(idx / max_idx)
+    for idx in range(num_grams_2):
+        n_gram_locations_2.setdefault(word_2[idx:idx + n], []).append(idx / (num_grams_2 - 1))
 
     # we want to calculate the earth mover distance for all n-grams in both words
     # > distance = sum(emd_1d(n_gram_locations_1.get(n_gram, []), n_gram_locations_2.get(n_gram, []))
     # >                for n_gram in set(n_gram_locations_1).union(set(n_gram_locations_2)))
     # this could be optimized by only calculating emd for n-grams in common and just counting the symmetric difference
-    # but calculating similarity is faster than that, so instead we calculate the similarity then find distance using:
-    # > distance = len(original_word_1) + len(original_word_2) + (6 - 2 * n) - similarity
+    # but calculating similarity is faster than that, so instead we calculate the similarity
+    # then find distance using the following identity:
+    # > distance + similarity == num_grams_1 + num_grams_2
     similarity = 0
     for n_gram, locations_1 in n_gram_locations_1.items():
         if n_gram in n_gram_locations_2:
             similarity += len(locations_1) + len(n_gram_locations_2[n_gram])
             similarity -= _emd_1d_fast(locations_1, n_gram_locations_2[n_gram])
 
-    # return distance
-    # notice that theres +2 instead of +6 because both words now have additional START and END flags
-    return len(word_1) + len(word_2) + 2 - 2 * n - similarity
+    # return similarity or distance, optionally normalized
+    output = similarity if invert else num_grams_1 + num_grams_2 - similarity
+    if normalize:
+        output /= num_grams_1 + num_grams_2
+    return output
 
 
 def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
@@ -171,7 +178,7 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
     distance = 0.0
 
     # merge ranges to get the sets of connected components
-    component_ranges = sorted(component_ranges, reverse=True)
+    component_ranges.sort(reverse=True)
     last_seen = -1
     while component_ranges:
         # take the first range, then keep taking overlapping ranges
@@ -233,13 +240,13 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
 
         # enumerate all possible matches for this connected component
         # this code block works even if connected_y is empty
-        # possible: actually build the bipartite graph to exclude impossible match options?
-        # also possible: try to greedy-match unshared points? (greedy match must succeed for all y)
+        # possible: try to greedy-match unshared points (greedy match must succeed for all y)
+        # also possible: actually build the bipartite graph to exclude impossible match options
         else:
-            min_cost = len(connected_y)
+            costs = [len(connected_y)]
             for x_combination in itertools.combinations(connected_x, len(connected_y)):
-                min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, connected_y)))
-            distance += min_cost + len(connected_x) - len(connected_y)
+                costs.append(sum(abs(x - y) for x, y in zip(x_combination, connected_y)))
+            distance += min(costs) + len(connected_x) - len(connected_y)
 
         # update last seen
         last_seen = right
@@ -261,12 +268,12 @@ def _emd_1d_slow(positions_x: Sequence[float], positions_y: Sequence[float]) -> 
     positions_y = sorted(positions_y)
 
     # find the minimum cost alignment
-    min_cost = len(positions_y)
+    costs = [len(positions_y)]
     for x_combination in itertools.combinations(positions_x, len(positions_y)):
-        min_cost = min(min_cost, sum(abs(x - y) for x, y in zip(x_combination, positions_y)))
+        costs.append(sum(abs(x - y) for x, y in zip(x_combination, positions_y)))
 
     # the distance is the min cost alignment plus a count of unmatched points
-    return len(positions_x) - len(positions_y) + min_cost
+    return len(positions_x) - len(positions_y) + min(costs)
 
 
 def emd_1d(positions_x: Sequence[float], positions_y: Sequence[float]) -> float:
@@ -294,21 +301,21 @@ def emd_1d(positions_x: Sequence[float], positions_y: Sequence[float]) -> float:
 
 
 if __name__ == '__main__':
-    # num_x = 3
-    # num_y = 7
-    #
-    # xs = [i / (num_x - 1) for i in range(num_x)]
-    # ys = [i / (num_y - 1) for i in range(num_y)]
+    num_x = 3
+    num_y = 7
+
+    xs = [i / (num_x - 1) for i in range(num_x)]
+    ys = [i / (num_y - 1) for i in range(num_y)]
     # print(xs)
     # print(ys)
-    # xs = xs + xs + xs
-    #
-    # for x_len in range(len(xs) + 1):
-    #     for y_len in range(len(ys) + 1):
-    #         print(x_len, y_len)
-    #         for x_combi in itertools.combinations(xs, x_len):
-    #             for y_combi in itertools.combinations(ys, y_len):
-    #                 assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
+    xs = xs + xs + xs
+
+    for x_len in range(len(xs) + 1):
+        for y_len in range(len(ys) + 1):
+            print(x_len, y_len)
+            for x_combi in itertools.combinations(xs, x_len):
+                for y_combi in itertools.combinations(ys, y_len):
+                    assert abs(emd_1d(x_combi, y_combi) - emd_1d(y_combi, x_combi)) < 0.0001, (x_combi, y_combi)
 
     for _ in range(1000):
         speed_test('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -327,4 +334,12 @@ if __name__ == '__main__':
     # test cases: https://www.watercoolertrivia.com/blog/schwarzenegger
     with open('schwarzenegger.txt') as f:
         for line in f:
-            print(line.strip(), speed_test(line.strip(), 'schwarzenegger'))
+            print('schwarzenegger', line.strip(), speed_test(line.strip(), 'schwarzenegger'))
+
+    # real world test cases
+    with open('words_en.txt') as f1:
+        with open('words_ms.txt') as f2:
+            for en, ms in zip(f1, f2):
+                speed_test(en.strip(), ms.strip())
+                speed_test(en.strip(), en.strip())
+                speed_test(ms.strip(), ms.strip())

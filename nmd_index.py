@@ -265,6 +265,7 @@ class ApproxWordList4:
                  dim: Union[int, float] = 1,
                  top_k: int = 10,
                  ) -> Counter:
+        t = time.time()
         num_n = len(self.__n_list)
 
         # count matching n-grams
@@ -282,9 +283,10 @@ class ApproxWordList4:
 
         # filter to possible top_k by max possible score
         # max score per n-gram is exactly 2x min possible score
+        # expected score is about 1.5x
         possible_word_indices = set()
         for word_index, scores in min_scores.items():
-            if (sum((x + x) ** dim for x in scores) / num_n) ** (1 / dim) >= min_acceptable_score:
+            if (sum((x * 1.5) ** dim for x in scores) / num_n) ** (1 / dim) >= min_acceptable_score:
                 possible_word_indices.add(word_index)
 
         # count matching n-grams
@@ -330,7 +332,7 @@ class ApproxWordList4:
         assert '\2' not in word and '\3' not in word, word
 
         # average the similarity scores
-        word_scores = self.__lookup(word, dim, top_k).most_common()
+        word_scores = self.__lookup(word, dim, top_k).most_common(top_k * 2)
 
         # also return edit distances for debugging
         out = [(self.__vocabulary[word_index], round(match_score, 3),

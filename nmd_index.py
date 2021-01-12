@@ -11,6 +11,7 @@ from typing import Union
 from levenshtein import damerau_levenshtein_distance as dld
 from levenshtein import edit_distance as ed
 from nmd import emd_1d
+from nmd import n_gram_emd
 
 
 @lru_cache(maxsize=0xFFFF)
@@ -507,12 +508,15 @@ class ApproxWordList5:
                         continue
                     word_scores = matches.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
                     # should be sum not max, but this is easier to deal with
-                    word_scores[n_idx] += max(len(locations), len(other_locations)) - emd_1d(locations, other_locations)
+                    word_scores[n_idx] += len(locations) + len(other_locations) - emd_1d(locations, other_locations)
 
         # normalize scores
         for other_word_index, word_scores in matches.items():
+            other_len = self.__word_lens[other_word_index]
+
             # should take other word into account too
-            norm_scores = [word_scores[n_idx] / (len(word) - n + 3) for n_idx, n in enumerate(self.__n_list)]
+            norm_scores = [word_scores[n_idx] / (num_grams(len(word), n) + num_grams(other_len, n))
+                           for n_idx, n in enumerate(self.__n_list)]
             matches[other_word_index] = norm_scores
 
         # average the similarity scores
@@ -541,6 +545,7 @@ class ApproxWordList5:
         out = [(self.__word_list[word_index], round(match_score, 3),
                 dld(word, self.__word_list[word_index]),
                 ed(word, self.__word_list[word_index]),
+                n_gram_emd(word, self.__word_list[word_index], invert=True, normalize=True),
                 )
                for word_index, match_score in word_scores
                if (match_score >= word_scores[0][1] * 0.9) or dld(word, self.__word_list[word_index]) <= 1]

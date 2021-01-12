@@ -19,8 +19,11 @@ def get_n_grams(word: str,
                 _start: str = '\2',
                 _end: str = '\3',
                 ) -> List[str]:
-    word = f'{_start}{word}{_end}'
-    return [word[idx:idx + n] for idx in range(len(word) - n + 1)]
+    if n > 1:
+        word = f'{_start}{word}{_end}'
+        return [word[idx:idx + n] for idx in range(len(word) - n + 1)]
+    else:
+        return list(word)
 
 
 class ApproxWordList3:
@@ -341,6 +344,196 @@ class ApproxWordList4:
                 )
                for word_index, match_score in word_scores
                if (match_score >= word_scores[0][1] * 0.9) or dld(word, self.__vocabulary[word_index]) <= 1]
+
+        print(time.time() - t)
+        return out
+
+
+def num_grams(len_word, n, num_flag_chars=2):
+    if n > 1:
+        return len_word + num_flag_chars + 1 - n
+    else:
+        return len_word + num_flag_chars
+
+
+class ApproxWordList5:
+    def __init__(self,
+                 n: Union[int, Iterable[int]] = (2, 4),
+                 case_sensitive: bool = False,
+                 ):
+        # define n
+        if isinstance(n, int):
+            assert n > 0
+            self.__n_list = (n,)
+        elif isinstance(n, Iterable):
+            self.__n_list = tuple(sorted(set(n)))
+            assert all(isinstance(n, int) and n > 0 for n in self.__n_list)
+        else:
+            raise TypeError(n)
+
+        # case sensitivity
+        if not isinstance(case_sensitive, (bool, int)):
+            raise TypeError(case_sensitive)
+        self.__case_insensitive = not case_sensitive
+
+        # vocabulary: word <-> word_index
+        self.__word_indices: Dict[str, int] = dict()  # word -> word_index
+        self.__word_list: List[str] = []  # word_index -> word
+        self.__word_lens: List[int] = []  # word_index -> len(word)
+
+        # n-gram counts: n_gram -> [(word_index, count), ...]
+        self.__ngram_counts: Dict[str, List[Tuple[int, int]]] = dict()
+
+        # n-gram normalized positions: n_gram -> [(word_index, (loc, loc, ...)), ...]
+        self.__ngram_positions: Dict[str, List[Tuple[int, Tuple[float, ...]]]] = dict()
+
+    @property
+    def vocabulary(self) -> List[str]:
+        return sorted(self.__word_list)
+
+    def _resolve_word_index(self, word: str, auto_add=True) -> Optional[int]:
+        if not isinstance(word, str):
+            raise TypeError(word)
+        if len(word) == 0:
+            raise ValueError(word)
+
+        # casefold is a bit like lowercase, but more consistent for arbitrary unicode
+        if self.__case_insensitive:
+            word = word.casefold()
+
+        # return if known word
+        if word in self.__word_indices:
+            return self.__word_indices[word]
+
+        # word not found, do we want to add it to the vocabulary
+        if not auto_add:
+            return None
+
+        # add unknown word
+        _idx = self.__word_indices[word] = len(self.__word_list)
+        self.__word_list.append(word)
+        self.__word_lens.append(len(word))
+
+        # double-check invariants before returning to make sure we didn't trigger some race condition
+        assert len(self.__word_indices) == len(self.__word_list) == _idx + 1
+        assert self.__word_list[_idx] == word, (self.__word_list[_idx], word)
+        assert self.__word_lens[_idx] == len(word), (self.__word_lens[_idx], word)
+        return _idx
+
+    def add_word(self, word: str):
+        if not isinstance(word, str):
+            raise TypeError(word)
+        if len(word) == 0:
+            raise ValueError(word)
+
+        if self.__case_insensitive:
+            word = word.casefold()
+
+        # already contained, nothing to add
+        if word in self.__word_indices:
+            return self
+
+        # i'll be using the STX and ETX control chars as START_TEXT and END_TEXT flags
+        assert '\2' not in word and '\3' not in word, word
+
+        word_index = self._resolve_word_index(word)
+
+        for n in set(self.__n_list):
+            n_grams = get_n_grams(word, n)
+
+            n_gram_locations = dict()  # n_gram -> [loc, loc, ...]
+            if len(n_grams) > 1:
+                for idx, n_gram in enumerate(n_grams):
+                    n_gram_locations.setdefault(n_gram, []).append(idx / (len(n_grams) - 1))
+            elif n_grams:
+                n_gram_locations.setdefault(n_grams[0], []).append(0)
+
+            for n_gram, locations in n_gram_locations.items():
+                assert len(locations) > 0
+                self.__ngram_positions.setdefault(n_gram, []).append((word_index, tuple(locations)))
+                self.__ngram_positions.setdefault(n_gram, []).append((word_index, len(locations)))
+
+        return self
+
+    def __lookup_similarity(self,
+                            word: str,
+                            dim: Union[int, float] = 1,
+                            top_k: int = 10,
+                            ) -> Counter:
+
+        # count matching n-grams
+        min_scores: Dict[int, List[int]] = dict()  # word_index -> [count_for_n, ...]
+        for n_idx, n in enumerate(self.__n_list):
+            for n_gram, count in Counter(get_n_grams(word, n)).items():
+                for other_word_index, other_locations in self.__ngram_positions.get(n_gram, []):
+                    word_scores = min_scores.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
+                    word_scores[n_idx] += min(count, len(other_locations))
+
+        # get min possible score per word
+        _scores = [(sum(x ** dim for x in scores) / len(self.__n_list)) ** (1 / dim) for scores in min_scores.values()]
+        _scores.sort(reverse=True)
+        min_acceptable_score = _scores[min(top_k, len(_scores)) - 1]
+
+        # filter to possible top_k by max possible score
+        # max score per n-gram is exactly 2x min possible score
+        # expected score is about 1.5x
+        possible_word_indices = set()
+        for word_index, scores in min_scores.items():
+            if (sum((x * 1.5) ** dim for x in scores) / len(self.__n_list)) ** (1 / dim) >= min_acceptable_score:
+                possible_word_indices.add(word_index)
+
+        # count matching n-grams
+        matches: Dict[int, List[float]] = dict()
+        for n_idx, n in enumerate(self.__n_list):
+            n_grams = get_n_grams(word, n)
+            n_gram_locations = dict()
+            for idx, n_gram in enumerate(n_grams):
+                n_gram_locations.setdefault(n_gram, []).append(idx / (len(n_grams) - 1))
+
+            for n_gram, locations in n_gram_locations.items():
+                for other_word_index, other_locations in self.__ngram_positions.get(n_gram, []):
+                    if other_word_index not in possible_word_indices:
+                        continue
+                    word_scores = matches.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
+                    # should be sum not max, but this is easier to deal with
+                    word_scores[n_idx] += max(len(locations), len(other_locations)) - emd_1d(locations, other_locations)
+
+        # normalize scores
+        for other_word_index, word_scores in matches.items():
+            # should take other word into account too
+            norm_scores = [word_scores[n_idx] / (len(word) - n + 3) for n_idx, n in enumerate(self.__n_list)]
+            matches[other_word_index] = norm_scores
+
+        # average the similarity scores
+        return Counter({word_index: (sum(x ** dim for x in scores) / len(self.__n_list)) ** (1 / dim)
+                        for word_index, scores in matches.items()})
+
+    def lookup(self, word: str, top_k: int = 10, dim: Union[int, float] = 1):
+        t = time.time()
+        if not isinstance(word, str):
+            raise TypeError(word)
+        if len(word) == 0:
+            raise ValueError(word)
+        if not isinstance(top_k, int):
+            raise TypeError(top_k)
+        if top_k <= 0:
+            raise ValueError(top_k)
+
+        if self.__case_insensitive:
+            word = word.casefold()
+
+        assert '\2' not in word and '\3' not in word, word
+
+        # average the similarity scores
+        word_scores = self.__lookup_similarity(word, dim, top_k).most_common(top_k * 2)
+
+        # also return edit distances for debugging
+        out = [(self.__word_list[word_index], round(match_score, 3),
+                dld(word, self.__word_list[word_index]),
+                ed(word, self.__word_list[word_index]),
+                )
+               for word_index, match_score in word_scores
+               if (match_score >= word_scores[0][1] * 0.9) or dld(word, self.__word_list[word_index]) <= 1]
 
         print(time.time() - t)
         return out

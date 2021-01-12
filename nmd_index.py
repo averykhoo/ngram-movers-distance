@@ -349,11 +349,16 @@ class ApproxWordList4:
         return out
 
 
+@lru_cache(maxsize=0xFFFF)
 def num_grams(len_word, n, num_flag_chars=2):
     if n > 1:
         return len_word + num_flag_chars + 1 - n
     else:
         return len_word + num_flag_chars
+
+
+def mean(vec, dim):
+    return (sum(x ** dim for x in vec) / len(vec)) ** (1 / dim)
 
 
 class ApproxWordList5:
@@ -451,7 +456,7 @@ class ApproxWordList5:
             for n_gram, locations in n_gram_locations.items():
                 assert len(locations) > 0
                 self.__ngram_positions.setdefault(n_gram, []).append((word_index, tuple(locations)))
-                self.__ngram_positions.setdefault(n_gram, []).append((word_index, len(locations)))
+                self.__ngram_counts.setdefault(n_gram, []).append((word_index, len(locations)))
 
         return self
 
@@ -461,25 +466,31 @@ class ApproxWordList5:
                             top_k: int = 10,
                             ) -> Counter:
 
+        assert isinstance(top_k, int) and top_k >= 1
+
         # count matching n-grams
         min_scores: Dict[int, List[int]] = dict()  # word_index -> [count_for_n, ...]
         for n_idx, n in enumerate(self.__n_list):
             for n_gram, count in Counter(get_n_grams(word, n)).items():
-                for other_word_index, other_locations in self.__ngram_positions.get(n_gram, []):
+                for other_word_index, other_count in self.__ngram_counts.get(n_gram, []):
                     word_scores = min_scores.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
-                    word_scores[n_idx] += min(count, len(other_locations))
+                    word_scores[n_idx] += min(count, other_count)
+
+        # no results, return empty Counter
+        if not min_scores:
+            return Counter()
 
         # get min possible score per word
-        _scores = [(sum(x ** dim for x in scores) / len(self.__n_list)) ** (1 / dim) for scores in min_scores.values()]
+        _scores = [mean(scores, dim=dim) for scores in min_scores.values()]
         _scores.sort(reverse=True)
         min_acceptable_score = _scores[min(top_k, len(_scores)) - 1]
 
         # filter to possible top_k by max possible score
         # max score per n-gram is exactly 2x min possible score
-        # expected score is about 1.5x
         possible_word_indices = set()
         for word_index, scores in min_scores.items():
-            if (sum((x * 1.5) ** dim for x in scores) / len(self.__n_list)) ** (1 / dim) >= min_acceptable_score:
+            # if (sum((x * 2) ** dim for x in scores) / len(self.__n_list)) ** (1 / dim) >= min_acceptable_score:
+            if mean([x * 2 for x in scores], dim) >= min_acceptable_score:
                 possible_word_indices.add(word_index)
 
         # count matching n-grams
@@ -505,8 +516,7 @@ class ApproxWordList5:
             matches[other_word_index] = norm_scores
 
         # average the similarity scores
-        return Counter({word_index: (sum(x ** dim for x in scores) / len(self.__n_list)) ** (1 / dim)
-                        for word_index, scores in matches.items()})
+        return Counter({word_index: mean(scores, dim) for word_index, scores in matches.items()})
 
     def lookup(self, word: str, top_k: int = 10, dim: Union[int, float] = 1):
         t = time.time()
@@ -559,7 +569,7 @@ if __name__ == '__main__':
     for word in words:
         wl_4.add_word(word)
 
-    wl_4b = ApproxWordList4((2, 4))
+    wl_4b = ApproxWordList5((2, 4))
     for word in words:
         wl_4b.add_word(word)
 
@@ -582,7 +592,7 @@ if __name__ == '__main__':
     for word in words:
         wl2_4.add_word(word)
 
-    wl2_4b = ApproxWordList4((2, 4))
+    wl2_4b = ApproxWordList5((2, 4))
     for word in words:
         wl2_4b.add_word(word)
 

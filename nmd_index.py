@@ -10,7 +10,7 @@ from typing import Union
 
 from levenshtein import damerau_levenshtein_distance as dld
 from levenshtein import edit_distance as ed
-from nmd import emd_1d
+from nmd import _emd_1d_fast as emd_1d
 from nmd import n_gram_emd
 
 

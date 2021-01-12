@@ -27,6 +27,18 @@ def get_n_grams(word: str,
         return list(word)
 
 
+@lru_cache(maxsize=0xFFFF)
+def num_grams(len_word, n, num_flag_chars=2):
+    if n > 1:
+        return len_word + num_flag_chars + 1 - n
+    else:
+        return len_word + num_flag_chars
+
+
+def mean(vec, dim):
+    return (sum(x ** dim for x in vec) / len(vec)) ** (1 / dim)
+
+
 class ApproxWordList3:
     def __init__(self, n: Union[int, Iterable[int]] = (2, 4), case_sensitive: bool = False):
         if isinstance(n, int):
@@ -100,7 +112,7 @@ class ApproxWordList3:
         for n in set(self.__n_list):
             if n > 1:
                 # add START_TEXT and END_TEXT flags
-                n_grams = [f'\2{word}\3'[i:i + n] for i in range(len(word) - n + 3)]
+                n_grams = [f'\2{word}\3'[i:i + n] for i in range(num_grams(len(word), n))]
             else:
                 # do not add START_TEXT and END_TEXT flags for 1-grams
                 n_grams = list(word)
@@ -121,7 +133,7 @@ class ApproxWordList3:
         # count matching n-grams
         matches: Dict[int, List[float]] = dict()
         for n_idx, n in enumerate(self.__n_list):
-            n_grams = [f'\2{word}\3'[i:i + n] for i in range(len(word) + 3 - n)]
+            n_grams = [f'\2{word}\3'[i:i + n] for i in range(num_grams(len(word),n))]
             n_gram_locations = dict()
             for idx, n_gram in enumerate(n_grams):
                 n_gram_locations.setdefault(n_gram, []).append(idx / (len(n_grams) - 1))
@@ -135,7 +147,7 @@ class ApproxWordList3:
         # normalize scores
         for other_word_index, word_scores in matches.items():
             # should take other word into account too
-            norm_scores = [word_scores[n_idx] / (len(word) - n + 3) for n_idx, n in enumerate(self.__n_list)]
+            norm_scores = [word_scores[n_idx] / (num_grams(len(word), n)) for n_idx, n in enumerate(self.__n_list)]
             matches[other_word_index] = norm_scores
 
         # average the similarity scores
@@ -247,7 +259,7 @@ class ApproxWordList4:
         for n in set(self.__n_list):
             if n > 1:
                 # add START_TEXT and END_TEXT flags
-                n_grams = [f'\2{word}\3'[i:i + n] for i in range(len(word) - n + 3)]
+                n_grams = [f'\2{word}\3'[i:i + n] for i in range(num_grams(len(word), n))]
             else:
                 # do not add START_TEXT and END_TEXT flags for 1-grams
                 n_grams = list(word)
@@ -312,7 +324,7 @@ class ApproxWordList4:
         # normalize scores
         for other_word_index, word_scores in matches.items():
             # should take other word into account too
-            norm_scores = [word_scores[n_idx] / (len(word) - n + 3) for n_idx, n in enumerate(self.__n_list)]
+            norm_scores = [word_scores[n_idx] / (num_grams(len(word), n)) for n_idx, n in enumerate(self.__n_list)]
             matches[other_word_index] = norm_scores
 
         # average the similarity scores
@@ -348,18 +360,6 @@ class ApproxWordList4:
 
         print(time.time() - t)
         return out
-
-
-@lru_cache(maxsize=0xFFFF)
-def num_grams(len_word, n, num_flag_chars=2):
-    if n > 1:
-        return len_word + num_flag_chars + 1 - n
-    else:
-        return len_word + num_flag_chars
-
-
-def mean(vec, dim):
-    return (sum(x ** dim for x in vec) / len(vec)) ** (1 / dim)
 
 
 class ApproxWordList5:

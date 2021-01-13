@@ -299,7 +299,8 @@ class ApproxWordList5:
             for n_gram, count in Counter(get_n_grams(word, n)).items():
                 for other_word_index, other_count in self.__ngram_counts.get(n_gram, []):
                     word_scores = min_scores.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
-                    word_scores[n_idx] += min(count, other_count)
+                    denominator = num_grams(len(word), n) + num_grams(self.__word_lens[other_word_index], n)
+                    word_scores[n_idx] += min(count, other_count) / denominator
 
         # no results, return empty Counter
         if not min_scores:
@@ -345,7 +346,7 @@ class ApproxWordList5:
         # average the similarity scores
         return Counter({word_index: mean(scores, dim) for word_index, scores in matches.items()})
 
-    def lookup(self, word: str, top_k: int = 10, dim: Union[int, float] = 1):
+    def lookup(self, word: str, top_k: int = 10, dim: Union[int, float] = 1, invert=True):
         t = time.time()
         if not isinstance(word, str):
             raise TypeError(word)
@@ -365,9 +366,10 @@ class ApproxWordList5:
         word_scores = self.__lookup_similarity(word, dim, top_k).most_common(top_k * 2)
 
         # also return edit distances for debugging
-        out = [(self.__word_list[word_index], round(match_score, 3),
+        out = [(self.__word_list[word_index], round(match_score if invert else 1 - match_score, 3),
                 dld(word, self.__word_list[word_index]),
                 ed(word, self.__word_list[word_index]),
+                n_gram_emd(word, self.__word_list[word_index], invert=invert, normalize=True),
                 )
                for word_index, match_score in word_scores
                if (match_score >= word_scores[0][1] * 0.9) or dld(word, self.__word_list[word_index]) <= 1]
@@ -392,11 +394,11 @@ if __name__ == '__main__':
     # for word in words:
     #     wl_3.add_word(word)
 
-    wl_4 = ApproxWordList3((2, ))
+    wl_4 = ApproxWordList3((2,))
     for word in words:
         wl_4.add_word(word)
 
-    wl_4b = ApproxWordList5((2, ))
+    wl_4b = ApproxWordList5((2,))
     for word in words:
         wl_4b.add_word(word)
 
@@ -415,11 +417,11 @@ if __name__ == '__main__':
     # for word in words:
     #     wl2_3.add_word(word)
 
-    wl2_4 = ApproxWordList3((2, ))
+    wl2_4 = ApproxWordList3((2,))
     for word in words:
         wl2_4.add_word(word)
 
-    wl2_4b = ApproxWordList5((2, ))
+    wl2_4b = ApproxWordList5((2,))
     for word in words:
         wl2_4b.add_word(word)
 

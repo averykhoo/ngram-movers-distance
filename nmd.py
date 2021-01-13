@@ -30,7 +30,7 @@ def n_gram_emd(word_1: str,
 
     # number of n-grams per word
     num_grams_1 = len(word_1) - n + 1
-    num_grams_2 = len(word_1) - n + 1
+    num_grams_2 = len(word_2) - n + 1
 
     # generate n_gram indices and index their locations
     n_gram_locations_1 = dict()

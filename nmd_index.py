@@ -5,6 +5,7 @@ from typing import Dict
 from typing import Iterable
 from typing import List
 from typing import Optional
+from typing import Set
 from typing import Tuple
 from typing import Union
 
@@ -28,7 +29,7 @@ def get_n_grams(word: str,
 
 
 @lru_cache(maxsize=0xFFFF)
-def num_grams(len_word, n, num_flag_chars=2):
+def num_grams(len_word, n, num_flag_chars=2) -> int:
     if n > 1:
         return len_word + num_flag_chars + 1 - n
     else:
@@ -178,6 +179,7 @@ class ApproxWordList3:
         out = [(self.__vocabulary[word_index], round(match_score, 3),
                 dld(word, self.__vocabulary[word_index]),
                 ed(word, self.__vocabulary[word_index]),
+                n_gram_emd(word, self.__vocabulary[word_index], invert=True, normalize=True),
                 )
                for word_index, match_score in counter.most_common(top_k * 2)
                if (match_score >= top_score * 0.9) or dld(word, self.__vocabulary[word_index]) <= 1]
@@ -190,7 +192,9 @@ class ApproxWordList5:
     def __init__(self,
                  n: Union[int, Iterable[int]] = (2, 4),
                  case_sensitive: bool = False,
+                 filter_n: int = 3,
                  ):
+
         # define n
         if isinstance(n, int):
             assert n > 0
@@ -210,6 +214,11 @@ class ApproxWordList5:
         self.__word_indices: Dict[str, int] = dict()  # word -> word_index
         self.__word_list: List[str] = []  # word_index -> word
         self.__word_lens: List[int] = []  # word_index -> len(word)
+        self.__word_num_grams: List[Tuple[int]] = []  # word_index -> [num_grams(len(word), n) for n in self.__n_list]
+
+        # n-gram filter: n_gram -> {word_index, ...}
+        self.__filter_n = filter_n
+        self.__ngram_filter: Dict[str, Set[int]] = dict()
 
         # n-gram counts: n_gram -> [(word_index, count), ...]
         self.__ngram_counts: Dict[str, List[Tuple[int, int]]] = dict()
@@ -243,6 +252,7 @@ class ApproxWordList5:
         _idx = self.__word_indices[word] = len(self.__word_list)
         self.__word_list.append(word)
         self.__word_lens.append(len(word))
+        self.__word_num_grams.append(tuple(num_grams(len(word), n) for n in self.__n_list))
 
         # double-check invariants before returning to make sure we didn't trigger some race condition
         assert len(self.__word_indices) == len(self.__word_list) == _idx + 1
@@ -268,6 +278,10 @@ class ApproxWordList5:
 
         word_index = self._resolve_word_index(word)
 
+        if self.__filter_n:
+            for n_gram in set(get_n_grams(word, self.__filter_n)):
+                self.__ngram_filter.setdefault(n_gram, set()).add(word_index)
+
         for n in set(self.__n_list):
             n_grams = get_n_grams(word, n)
 
@@ -280,27 +294,39 @@ class ApproxWordList5:
 
             for n_gram, locations in n_gram_locations.items():
                 assert len(locations) > 0
-                self.__ngram_positions.setdefault(n_gram, []).append((word_index, tuple(locations)))
                 self.__ngram_counts.setdefault(n_gram, []).append((word_index, len(locations)))
+                self.__ngram_positions.setdefault(n_gram, []).append((word_index, tuple(locations)))
 
         return self
 
     def __lookup_similarity(self,
                             word: str,
-                            dim: Union[int, float] = 1,
-                            top_k: int = 10,
+                            dim: Union[int, float],
+                            top_k: int,
                             ) -> Counter:
 
         assert isinstance(top_k, int) and top_k >= 1
+        len_word = len(word)
+
+        possible_word_indices = set()
+        if self.__filter_n:
+            for n_gram in set(get_n_grams(word, self.__filter_n)):
+                possible_word_indices.update(self.__ngram_filter.get(n_gram, set()))
 
         # count matching n-grams
         min_scores: Dict[int, List[int]] = dict()  # word_index -> [count_for_n, ...]
         for n_idx, n in enumerate(self.__n_list):
             for n_gram, count in Counter(get_n_grams(word, n)).items():
                 for other_word_index, other_count in self.__ngram_counts.get(n_gram, []):
-                    word_scores = min_scores.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
-                    denominator = num_grams(len(word), n) + num_grams(self.__word_lens[other_word_index], n)
-                    word_scores[n_idx] += min(count, other_count) / denominator
+                    if self.__filter_n and  other_word_index not in possible_word_indices:
+                        continue
+                    if other_word_index not in min_scores:
+                        min_scores[other_word_index] = [0 for _ in range(len(self.__n_list))]
+                    denominator = num_grams(len_word, n) + self.__word_num_grams[other_word_index][n_idx]
+                    if count < other_count:
+                        min_scores[other_word_index][n_idx] += count / denominator
+                    else:
+                        min_scores[other_word_index][n_idx] += other_count / denominator
 
         # no results, return empty Counter
         if not min_scores:
@@ -339,14 +365,14 @@ class ApproxWordList5:
             other_len = self.__word_lens[other_word_index]
 
             # should take other word into account too
-            norm_scores = [word_scores[n_idx] / (num_grams(len(word), n) + num_grams(other_len, n))
+            norm_scores = [word_scores[n_idx] / (num_grams(len_word, n) + num_grams(other_len, n))
                            for n_idx, n in enumerate(self.__n_list)]
             matches[other_word_index] = norm_scores
 
         # average the similarity scores
         return Counter({word_index: mean(scores, dim) for word_index, scores in matches.items()})
 
-    def lookup(self, word: str, top_k: int = 10, dim: Union[int, float] = 1, invert=True):
+    def lookup(self, word: str, top_k: int = 5, dim: Union[int, float] = 1, invert=True):
         t = time.time()
         if not isinstance(word, str):
             raise TypeError(word)
@@ -371,8 +397,8 @@ class ApproxWordList5:
                 ed(word, self.__word_list[word_index]),
                 n_gram_emd(word, self.__word_list[word_index], invert=invert, normalize=True),
                 )
-               for word_index, match_score in word_scores
-               if (match_score >= word_scores[0][1] * 0.9) or dld(word, self.__word_list[word_index]) <= 1]
+               for word_index, match_score in word_scores]
+        #      if (match_score >= word_scores[0][1] * 0.9) or dld(word, self.__word_list[word_index]) <= 1]
 
         print(time.time() - t)
         return out
@@ -381,18 +407,6 @@ class ApproxWordList5:
 if __name__ == '__main__':
     with open('words_ms.txt', encoding='utf8') as f:
         words = set(f.read().split())
-    #
-    # wl_1 = ApproxWordList3((1, 2, 3, 4))
-    # for word in words:
-    #     wl_1.add_word(word)
-    #
-    # wl_2 = ApproxWordList3((2, 3, 4))
-    # for word in words:
-    #     wl_2.add_word(word)
-    #
-    # wl_3 = ApproxWordList3((3, 4))
-    # for word in words:
-    #     wl_3.add_word(word)
 
     wl_4 = ApproxWordList3((2,))
     for word in words:
@@ -402,20 +416,9 @@ if __name__ == '__main__':
     for word in words:
         wl_4b.add_word(word)
 
-    with open('words_en.txt', encoding='utf8') as f:
+    # with open('words_en.txt', encoding='utf8') as f:
+    with open('british-english-insane.txt', encoding='utf8') as f:
         words = set(f.read().split())
-
-    # wl2_1 = ApproxWordList3((1, 2, 3, 4))
-    # for word in words:
-    #     wl2_1.add_word(word)
-    #
-    # wl2_2 = ApproxWordList3((2, 3, 4))
-    # for word in words:
-    #     wl2_2.add_word(word)
-    #
-    # wl2_3 = ApproxWordList3((3, 4))
-    # for word in words:
-    #     wl2_3.add_word(word)
 
     wl2_4 = ApproxWordList3((2,))
     for word in words:
@@ -425,6 +428,8 @@ if __name__ == '__main__':
     for word in words:
         wl2_4b.add_word(word)
 
+    # supercallousedfragilemisticexepialidocus
+    # asalamalaikum
     print(wl_4.lookup('bananananaanananananana'))
     print(wl_4b.lookup('bananananaanananananana'))
     print(wl2_4.lookup('bananananaanananananana'))
@@ -435,13 +440,8 @@ if __name__ == '__main__':
         word = word.strip()
         if not word:
             break
-        # print('wl_1', wl_1.lookup(word))
-        # print('wl_2', wl_2.lookup(word))
-        # print('wl_3', wl_3.lookup(word))
         print('wl_4', wl_4.lookup(word))
         print('wl_4b', wl_4b.lookup(word))
-        # print('wl2_1', wl2_1.lookup(word))
-        # print('wl2_2', wl2_2.lookup(word))
-        # print('wl2_3', wl2_3.lookup(word))
+
         print('wl2_4', wl2_4.lookup(word))
         print('wl2_4b', wl2_4b.lookup(word))

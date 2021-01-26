@@ -9,8 +9,8 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
-from levenshtein import damerau_levenshtein_distance as dld
-from levenshtein import edit_distance as ed
+from levenshtein import damerau_levenshtein_distance
+from levenshtein import edit_distance
 from nmd import _emd_1d_fast as emd_1d
 from nmd import n_gram_emd
 
@@ -177,12 +177,13 @@ class ApproxWordList3:
 
         # also return edit distances for debugging
         out = [(self.__vocabulary[word_index], round(match_score, 3),
-                dld(word, self.__vocabulary[word_index]),
-                ed(word, self.__vocabulary[word_index]),
+                damerau_levenshtein_distance(word, self.__vocabulary[word_index]),
+                edit_distance(word, self.__vocabulary[word_index]),
                 n_gram_emd(word, self.__vocabulary[word_index], invert=True, normalize=True),
                 )
                for word_index, match_score in counter.most_common(top_k * 2)
-               if (match_score >= top_score * 0.9) or dld(word, self.__vocabulary[word_index]) <= 1]
+               if (match_score >= top_score * 0.9)
+               or damerau_levenshtein_distance(word, self.__vocabulary[word_index]) <= 1]
 
         print(time.time() - t)
         return out[:top_k]
@@ -394,12 +395,13 @@ class ApproxWordList5:
         # also return edit distances for debugging
         out = [(self.__word_list[word_index],  # word
                 round(match_score if invert else 1 - match_score, 3),  # lookup result
-                dld(word, self.__word_list[word_index]),  # damerau-levenshtein distance
-                ed(word, self.__word_list[word_index]),  # edit distance
+                damerau_levenshtein_distance(word, self.__word_list[word_index]),
+                edit_distance(word, self.__word_list[word_index]),
                 n_gram_emd(word, self.__word_list[word_index], invert=invert, normalize=True),  # ground truth
                 )
                for word_index, match_score in word_scores]
-        #      if (match_score >= word_scores[0][1] * 0.9) or dld(word, self.__word_list[word_index]) <= 1]
+        #      if (match_score >= word_scores[0][1] * 0.9)
+        #      or damerau_levenshtein_distance(word, self.__word_list[word_index]) <= 1]
 
         print(time.time() - t)
         return out

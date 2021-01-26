@@ -30,13 +30,13 @@ with open(f'words_ms.txt', encoding=f'utf8') as f:
     words = set(f.read().split())
 
 # index words
-word_list = ApproxWordList5((2,))
+word_list = ApproxWordList5((2, 4), filter_n=0)  # combined 2- and 4-grams seem to work best
 for word in words:
     word_list.add_word(word)
 
 # lookup a word
-print(word_list.lookup(f'asalamalaikum'))
-print(word_list.lookup(f'walaikumalasam'))
+print(word_list.lookup(f'asalamalaikum'))  # -> 'assalamualaikum'
+print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 ```
 
 #   todo

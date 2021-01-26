@@ -2,15 +2,6 @@ import itertools
 from typing import Sequence
 from typing import Union
 
-from levenshtein import damerau_levenshtein_distance
-from levenshtein import edit_distance
-
-
-def speed_test(word_1: str, word_2: str):
-    edit_distance(word_1, word_2)
-    damerau_levenshtein_distance(word_1, word_2)
-    return ngram_movers_distance(word_1, word_2)
-
 
 def ngram_movers_distance(word_1: str,
                           word_2: str,
@@ -19,11 +10,11 @@ def ngram_movers_distance(word_1: str,
                           normalize: bool = False,
                           ) -> float:
     """
-    calculates the n-gram mover's distance (for some specified n)
-    case-sensitive by default, so lowercase or casefold the inputs for case-insensitive results
+    calculates the n-gram mover's distance between two words (for some specified n)
+    case-sensitive by default, so lowercase/casefold the input words for case-insensitive results
 
     :param word_1: a string
-    :param word_2: another string, possibly the same string
+    :param word_2: another string, or possibly the same string
     :param n: number of chars per n-gram (default 2)
     :param invert: return similarity instead of difference
     :param normalize: normalize to a score from 0 to 1 (inclusive of 0 and 1)
@@ -269,7 +260,9 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
     return distance
 
 
-def _emd_1d_slow(positions_x: Sequence[float], positions_y: Sequence[float]) -> float:
+def _emd_1d_slow(positions_x: Sequence[float],
+                 positions_y: Sequence[float],
+                 ) -> float:
     # positions_x must be longer
     if len(positions_x) < len(positions_y):
         positions_x, positions_y = positions_y, positions_x
@@ -287,11 +280,17 @@ def _emd_1d_slow(positions_x: Sequence[float], positions_y: Sequence[float]) -> 
     return len(positions_x) - len(positions_y) + min(costs)
 
 
-def emd_1d(positions_x: Sequence[float], positions_y: Sequence[float]) -> float:
+def emd_1d(positions_x: Sequence[float],
+           positions_y: Sequence[float],
+           ) -> float:
     """
     kind of like earth mover's distance
     but positions are limited to within the unit interval
     and must be quantized
+
+    :param positions_x: list of positions (each a float from 0 to 1 inclusive)
+    :param positions_y: list of positions (each a float from 0 to 1 inclusive)
+    :return:
     """
 
     # sanity checks
@@ -312,6 +311,17 @@ def emd_1d(positions_x: Sequence[float], positions_y: Sequence[float]) -> float:
 
 
 if __name__ == '__main__':
+
+    from levenshtein import damerau_levenshtein_distance
+    from levenshtein import edit_distance
+
+
+    def speed_test(word_1: str, word_2: str):
+        edit_distance(word_1, word_2)
+        damerau_levenshtein_distance(word_1, word_2)
+        return ngram_movers_distance(word_1, word_2)
+
+
     num_x = 3
     num_y = 7
 

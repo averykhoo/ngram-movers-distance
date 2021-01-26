@@ -318,7 +318,7 @@ class ApproxWordList5:
         for n_idx, n in enumerate(self.__n_list):
             for n_gram, count in Counter(get_n_grams(word, n)).items():
                 for other_word_index, other_count in self.__ngram_counts.get(n_gram, []):
-                    if self.__filter_n and  other_word_index not in possible_word_indices:
+                    if self.__filter_n and other_word_index not in possible_word_indices:
                         continue
                     if other_word_index not in min_scores:
                         min_scores[other_word_index] = [0 for _ in range(len(self.__n_list))]
@@ -392,10 +392,11 @@ class ApproxWordList5:
         word_scores = self.__lookup_similarity(word, dim, top_k).most_common(top_k * 2)
 
         # also return edit distances for debugging
-        out = [(self.__word_list[word_index], round(match_score if invert else 1 - match_score, 3),
-                dld(word, self.__word_list[word_index]),
-                ed(word, self.__word_list[word_index]),
-                n_gram_emd(word, self.__word_list[word_index], invert=invert, normalize=True),
+        out = [(self.__word_list[word_index],  # word
+                round(match_score if invert else 1 - match_score, 3),  # lookup result
+                dld(word, self.__word_list[word_index]),  # damerau-levenshtein distance
+                ed(word, self.__word_list[word_index]),  # edit distance
+                n_gram_emd(word, self.__word_list[word_index], invert=invert, normalize=True),  # ground truth
                 )
                for word_index, match_score in word_scores]
         #      if (match_score >= word_scores[0][1] * 0.9) or dld(word, self.__word_list[word_index]) <= 1]

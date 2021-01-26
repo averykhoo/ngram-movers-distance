@@ -9,15 +9,15 @@ from levenshtein import edit_distance
 def speed_test(word_1: str, word_2: str):
     edit_distance(word_1, word_2)
     damerau_levenshtein_distance(word_1, word_2)
-    return n_gram_emd(word_1, word_2)
+    return ngram_movers_distance(word_1, word_2)
 
 
-def n_gram_emd(word_1: str,
-               word_2: str,
-               n: int = 2,
-               invert: bool = False,
-               normalize: bool = False,
-               ) -> float:
+def ngram_movers_distance(word_1: str,
+                          word_2: str,
+                          n: int = 2,
+                          invert: bool = False,
+                          normalize: bool = False,
+                          ) -> float:
     """
     calculates the n-gram mover's distance (for some specified n)
     case-sensitive by default, so lowercase or casefold the inputs for case-insensitive results

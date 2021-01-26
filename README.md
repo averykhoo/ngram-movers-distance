@@ -4,20 +4,21 @@ a string similarity measure based on Earth Mover's Distance
 
 #   Usage
 ##  `nmd.py`
+
 ```python
-from nmd import n_gram_emd
+from nmd import ngram_movers_distance
 
 # n-gram mover's distance
-print(n_gram_emd(f'hello', f'yellow'))
+print(ngram_movers_distance(f'hello', f'yellow'))
 
 # similarity (inverted distance)
-print(n_gram_emd(f'hello', f'yellow', invert=True))
+print(ngram_movers_distance(f'hello', f'yellow', invert=True))
 
 # distance, normalized to the range 0 to 1 (inclusive of 0 and 1)
-print(n_gram_emd(f'hello', f'yellow', normalize=True))
+print(ngram_movers_distance(f'hello', f'yellow', normalize=True))
 
 # similarity, normalized to the range 0 to 1 (inclusive of 0 and 1)
-print(n_gram_emd(f'hello', f'yellow', invert=True, normalize=True))
+print(ngram_movers_distance(f'hello', f'yellow', invert=True, normalize=True))
 ```
 
 ##  `nmd_index.py`

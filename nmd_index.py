@@ -12,7 +12,7 @@ from typing import Union
 from levenshtein import damerau_levenshtein_distance
 from levenshtein import edit_distance
 from nmd import _emd_1d_fast as emd_1d
-from nmd import n_gram_emd
+from nmd import ngram_movers_distance
 
 
 @lru_cache(maxsize=0xFFFF)
@@ -179,7 +179,7 @@ class ApproxWordList3:
         out = [(self.__vocabulary[word_index], round(match_score, 3),
                 damerau_levenshtein_distance(word, self.__vocabulary[word_index]),
                 edit_distance(word, self.__vocabulary[word_index]),
-                n_gram_emd(word, self.__vocabulary[word_index], invert=True, normalize=True),
+                ngram_movers_distance(word, self.__vocabulary[word_index], invert=True, normalize=True),
                 )
                for word_index, match_score in counter.most_common(top_k * 2)
                if (match_score >= top_score * 0.9)
@@ -397,7 +397,7 @@ class ApproxWordList5:
                 round(match_score if invert else 1 - match_score, 3),  # lookup result
                 damerau_levenshtein_distance(word, self.__word_list[word_index]),
                 edit_distance(word, self.__word_list[word_index]),
-                n_gram_emd(word, self.__word_list[word_index], invert=invert, normalize=True),  # ground truth
+                ngram_movers_distance(word, self.__word_list[word_index], invert=invert, normalize=True),
                 )
                for word_index, match_score in word_scores]
         #      if (match_score >= word_scores[0][1] * 0.9)

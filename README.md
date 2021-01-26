@@ -1,8 +1,9 @@
-# N-gram Mover's Distance
+#   N-gram Mover's Distance
 
 a string similarity measure based on Earth Mover's Distance
 
-# Usage
+#   Usage
+##  `nmd.py`
 ```python
 from nmd import n_gram_emd
 
@@ -17,6 +18,24 @@ print(n_gram_emd(f'hello', f'yellow', normalize=True))
 
 # similarity, normalized to the range 0 to 1 (inclusive of 0 and 1)
 print(n_gram_emd(f'hello', f'yellow', invert=True, normalize=True))
+```
+
+##  `nmd_index.py`
+```python
+from nmd_index import ApproxWordList5
+
+# get words from a text file
+with open(f'words_ms.txt', encoding=f'utf8') as f:
+    words = set(f.read().split())
+
+# index words
+word_list = ApproxWordList5((2,))
+for word in words:
+    word_list.add_word(word)
+
+# lookup a word
+print(word_list.lookup(f'asalamalaikum'))
+print(word_list.lookup(f'walaikumalasam'))
 ```
 
 #   todo

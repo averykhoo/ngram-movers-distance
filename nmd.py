@@ -18,13 +18,36 @@ def n_gram_emd(word_1: str,
                invert: bool = False,
                normalize: bool = False,
                ) -> float:
+    """
+    calculates the n-gram mover's distance (for some specified n)
+    case-sensitive by default, so lowercase or casefold the inputs for case-insensitive results
+
+    :param word_1: a string
+    :param word_2: another string, possibly the same string
+    :param n: number of chars per n-gram (default 2)
+    :param invert: return similarity instead of difference
+    :param normalize: normalize to a score from 0 to 1 (inclusive of 0 and 1)
+    :return: n-gram mover's distance, possibly inverted and/or normalized
+    """
     # sanity checks
-    assert isinstance(word_1, str) and '\2' not in word_1 and '\3' not in word_1
-    assert isinstance(word_2, str) and '\2' not in word_2 and '\3' not in word_2
-    assert isinstance(n, int) and n >= 2
+    if not isinstance(word_1, str):
+        raise TypeError(word_1)
+    if '\2' in word_1 or '\3' in word_1:
+        raise ValueError(word_1)
+
+    if not isinstance(word_2, str):
+        raise TypeError(word_2)
+    if '\2' in word_2 or '\3' in word_2:
+        raise ValueError(word_2)
+
+    if not isinstance(n, int):
+        raise TypeError(n)
+    if n < 2:
+        raise ValueError(n)  # technically it would work for n==1, but we'd want to drop the START and END flags
 
     # add START_TEXT and END_TEXT markers to each word
     # https://en.wikipedia.org/wiki/Control_character#Transmission_control
+    # the usage of these characters in any text is almost certainly a bug
     word_1 = f'\2{word_1}\3'
     word_2 = f'\2{word_2}\3'
 
@@ -40,12 +63,12 @@ def n_gram_emd(word_1: str,
     for idx in range(num_grams_2):
         n_gram_locations_2.setdefault(word_2[idx:idx + n], []).append(idx / (num_grams_2 - 1))
 
-    # we want to calculate the earth mover distance for all n-grams in both words
+    # we want to calculate the earth mover distance for all n-grams in both words, which uses the following equation:
     # > distance = sum(emd_1d(n_gram_locations_1.get(n_gram, []), n_gram_locations_2.get(n_gram, []))
     # >                for n_gram in set(n_gram_locations_1).union(set(n_gram_locations_2)))
     # this could be optimized by only calculating emd for n-grams in common and just counting the symmetric difference
-    # but calculating similarity is faster than that, so instead we calculate the similarity
-    # then find distance using the following identity:
+    # but calculating similarity (i.e. inverted distance) runs even faster than that
+    # so instead we calculate the similarity and then find distance using the following identity:
     # > distance + similarity == num_grams_1 + num_grams_2
     similarity = 0
     for n_gram, locations_1 in n_gram_locations_1.items():

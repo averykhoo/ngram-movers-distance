@@ -433,6 +433,12 @@ if __name__ == '__main__':
 
     # supercallousedfragilemisticexepialidocus
     # asalamalaikum
+    # beewilldermant
+    # blackbary
+    # kartweel
+    # chomosrome
+    # chrisanthumem
+    # instalatiomn
     print(wl_4.lookup('bananananaanananananana'))
     print(wl_4b.lookup('bananananaanananananana'))
     print(wl2_4.lookup('bananananaanananananana'))

@@ -55,6 +55,9 @@ print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 *   prefix lookup
     *   look for all strings that are approximately prefixed
     *   like existing index but not normalized and ignoring unmatched ngrams from target
+*   bag of words
+    *   use WMD with NMD word distances
+    *   may require proper EMD implementation?
     
     
     

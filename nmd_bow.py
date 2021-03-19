@@ -10,7 +10,7 @@ from tokenizer import unicode_tokenize
 def bow_ngram_movers_distance(bag_of_words_1: Union[str, Iterable[str]],
                               bag_of_words_2: Union[str, Iterable[str]],
                               n: int = 2,
-                              invert:bool=False,
+                              invert: bool = False,
                               ) -> int:
     """
     calculates the n-gram mover's distance between two bags of words (for some specified n)
@@ -19,6 +19,7 @@ def bow_ngram_movers_distance(bag_of_words_1: Union[str, Iterable[str]],
     :param bag_of_words_1: a list of strings
     :param bag_of_words_2: another list of strings
     :param n: number of chars per n-gram (default 2)
+    :param invert: return similarity instead of distance
     :return: n-gram mover's distance, possibly inverted and/or normalized
     """
 
@@ -40,7 +41,7 @@ def bow_ngram_movers_distance(bag_of_words_1: Union[str, Iterable[str]],
 
     # sum
     if invert:
-        out = min(len(bag_of_words_1) , len(bag_of_words_2))
+        out = min(len(bag_of_words_1), len(bag_of_words_2))
         for row_idx, col_idx in zip(row_idxs, col_idxs):
             out -= costs[row_idx][col_idx]
     else:
@@ -64,7 +65,8 @@ if __name__ == '__main__':
         ref_tokens = list(unicode_tokenize(ref_line.casefold(), words_only=True, merge_apostrophe_word=True))
         hyp_tokens = list(unicode_tokenize(hyp_line.casefold(), words_only=True, merge_apostrophe_word=True))
         scores_bow.append(bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4) / max(len(ref_tokens), len(hyp_tokens)))
-        scores_sim.append(bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4, invert=True) / max(len(ref_tokens), len(hyp_tokens)))
+        scores_sim.append(
+            bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4, invert=True) / max(len(ref_tokens), len(hyp_tokens)))
         scores_nmd.append(ngram_movers_distance(' '.join(ref_tokens), ' '.join(hyp_tokens), 4, normalize=True))
         print(' '.join(ref_tokens))
         print(' '.join(hyp_tokens))

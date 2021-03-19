@@ -9,7 +9,8 @@ from tokenizer import unicode_tokenize
 
 def bow_ngram_movers_distance(bag_of_words_1: Union[str, Iterable[str]],
                               bag_of_words_2: Union[str, Iterable[str]],
-                              n: int = 2
+                              n: int = 2,
+                              invert:bool=False,
                               ) -> int:
     """
     calculates the n-gram mover's distance between two bags of words (for some specified n)
@@ -38,10 +39,14 @@ def bow_ngram_movers_distance(bag_of_words_1: Union[str, Iterable[str]],
     row_idxs, col_idxs = scipy.optimize.linear_sum_assignment(costs)  # 1D equivalent of EMD
 
     # sum
-    out = abs(len(bag_of_words_1) - len(bag_of_words_2))
-    for row_idx, col_idx in zip(row_idxs, col_idxs):
-        out += costs[row_idx][col_idx]
-        # print(bag_of_words_2[col_idx], bag_of_words_1[row_idx], costs[row_idx][col_idx])
+    if invert:
+        out = min(len(bag_of_words_1) , len(bag_of_words_2))
+        for row_idx, col_idx in zip(row_idxs, col_idxs):
+            out -= costs[row_idx][col_idx]
+    else:
+        out = abs(len(bag_of_words_1) - len(bag_of_words_2))
+        for row_idx, col_idx in zip(row_idxs, col_idxs):
+            out += costs[row_idx][col_idx]
 
     return out
 
@@ -54,14 +59,17 @@ if __name__ == '__main__':
 
     scores_bow = []
     scores_nmd = []
+    scores_sim = []
     for ref_line, hyp_line in zip(ref_lines, hyp_lines):
         ref_tokens = list(unicode_tokenize(ref_line.casefold(), words_only=True, merge_apostrophe_word=True))
         hyp_tokens = list(unicode_tokenize(hyp_line.casefold(), words_only=True, merge_apostrophe_word=True))
         scores_bow.append(bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4) / max(len(ref_tokens), len(hyp_tokens)))
+        scores_sim.append(bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4, invert=True) / max(len(ref_tokens), len(hyp_tokens)))
         scores_nmd.append(ngram_movers_distance(' '.join(ref_tokens), ' '.join(hyp_tokens), 4, normalize=True))
         print(' '.join(ref_tokens))
         print(' '.join(hyp_tokens))
         print(scores_bow[-1])
+        print(scores_sim[-1])
         print(scores_nmd[-1])
 
     from matplotlib import pyplot as plt
@@ -69,7 +77,7 @@ if __name__ == '__main__':
     plt.scatter(scores_bow, scores_nmd, marker='.')
     plt.show()
     scores_diff = [a - b for a, b in zip(scores_bow, scores_nmd)]
-    tmp = sorted(zip(scores_diff, scores_bow, scores_nmd, ref_lines, hyp_lines))
+    tmp = sorted(zip(scores_diff, scores_bow, scores_sim, scores_nmd, ref_lines, hyp_lines))
     print(tmp[0])
     print(tmp[1])
     print(tmp[2])

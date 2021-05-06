@@ -40,6 +40,22 @@ print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 ```
 
 #   todo
+*   real_quick_ratio, or maybe calculate length bounds?
+```python
+def real_quick_ratio(self):
+    """Return an upper bound on ratio() very quickly.
+
+    This isn't defined beyond that it is an upper bound on .ratio(), and
+    is faster to compute than either .ratio() or .quick_ratio().
+    """
+
+    la, lb = len(self.a), len(self.b)
+    # can't have more matches than the number of elements in the shorter sequence
+    matches, length = min(la, lb), la + lb
+    if length:
+        return 2.0 * matches / length
+    return 1.0
+```
 *   create a better string container for the index, more like a `set`
     *   `add(word: str)`
     *   `remove(word: str)`

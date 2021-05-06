@@ -41,6 +41,9 @@ print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 
 #   todo
 *   real_quick_ratio, or maybe calculate length bounds?
+    *   needs a cutoff to actually speed up though, makes a huge difference for difflib
+    *   a sufficiently low cutoff is not unreasonable, although the default of 0.6 might be a little high for nmd
+    *   that said the builtin diff performs pretty badly at low similarities, so 0.6 is reasonable for them 
 ```python
 def real_quick_ratio(self):
     """Return an upper bound on ratio() very quickly.

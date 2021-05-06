@@ -412,14 +412,14 @@ class ApproxWordList5:
 
 if __name__ == '__main__':
     with open('words_ms.txt', encoding='utf8') as f:
-        words = set(f.read().split())
+        words_ms = set(f.read().split())
 
     awl3_ms = ApproxWordList3((2,))
-    for word in words:
+    for word in words_ms:
         awl3_ms.add_word(word)
 
     awl5_ms = ApproxWordList5((2,))
-    for word in words:
+    for word in words_ms:
         awl5_ms.add_word(word)
 
     with open('words_en.txt', encoding='utf8') as f:
@@ -467,6 +467,16 @@ if __name__ == '__main__':
         print()
 
         t = time.time()
+        print('difflib_ms', difflib.get_close_matches(word, words_ms, n=10))
+        print(time.time() - t)
+        print()
+
+        t = time.time()
+        print('difflib_ms', difflib.get_close_matches(word, words_ms, n=10, cutoff=0.3))
+        print(time.time() - t)
+        print()
+
+        t = time.time()
         print('awl3_en', awl3_en.lookup(word))
         print(time.time() - t)
         print()
@@ -478,6 +488,11 @@ if __name__ == '__main__':
 
         t = time.time()
         print('difflib_en', difflib.get_close_matches(word, words, n=10))
+        print(time.time() - t)
+        print()
+
+        t = time.time()
+        print('difflib_en', difflib.get_close_matches(word, words, n=10, cutoff=0.3))
         print(time.time() - t)
         print()
 

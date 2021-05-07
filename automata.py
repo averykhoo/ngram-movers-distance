@@ -261,8 +261,8 @@ class BKNode(object):
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
-    # words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
-    words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
+    words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
+    # words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
     print(len(words))
 
     bkn = BKNode('banana')

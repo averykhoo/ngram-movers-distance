@@ -234,6 +234,7 @@ class BKNode(object):
     def __init__(self, term):
         self.term = term
         self.children = {}
+        self.results = []
 
     def insert(self, other):
         distance = levenshtein(self.term, other)
@@ -253,14 +254,20 @@ class BKNode(object):
             child = self.children.get(i)
             if child:
                 counter += child.search(term, k, results)
+        self.results = results
         return counter
 
 
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
-    words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
+    # words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
+    words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
     print(len(words))
+
+    bkn = BKNode('banana')
+    for word in sorted(words):
+        bkn.insert(word)
 
     xs = range(10)
     ts = []  # times
@@ -280,6 +287,11 @@ if __name__ == '__main__':
         print('probes:', m.probes, '=', float(m.probes) / len(words))
         fs.append(len(found))
         print('found:', len(found), found[:25])
+
+        t = time.time()
+        print(bkn.search('asalamalaikum', k=i))
+        print(len(bkn.results), sorted(bkn.results)[:25])
+        print(time.time()-t)
 
     plt.twinx().plot(xs, ts, '-r', label='time')
     plt.twinx().plot(xs, ps, '-g', label='probes')

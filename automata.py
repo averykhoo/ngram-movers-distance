@@ -117,10 +117,12 @@ class DFA(object):
 
         # Evaluate the DFA as far as possible
         state = self.start_state
+        i = -1
         for i, x in enumerate(input):
             stack.append((input[:i], state, x))
             state = self.next_state(state, x)
-            if not state: break
+            if not state:
+                break
         else:
             stack.append((input[:i + 1], state, None))
 
@@ -291,7 +293,7 @@ if __name__ == '__main__':
         t = time.time()
         print(bkn.search('asalamalaikum', k=i))
         print(len(bkn.results), sorted(bkn.results)[:25])
-        print(time.time()-t)
+        print(time.time() - t)
 
     plt.twinx().plot(xs, ts, '-r', label='time')
     plt.twinx().plot(xs, ps, '-g', label='probes')

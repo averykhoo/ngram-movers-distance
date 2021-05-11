@@ -1,5 +1,6 @@
 """
 from 'Damn Cool Algorithms' blog
+http://blog.notdot.net/2010/07/Damn-Cool-Algorithms-Levenshtein-Automata
 """
 
 import bisect
@@ -23,8 +24,8 @@ class NFA(object):
     def start_state(self):
         return frozenset(self._expand({self._start_state}))
 
-    def add_transition(self, src, input, dest):
-        self.transitions.setdefault(src, {}).setdefault(input, set()).add(dest)
+    def add_transition(self, src, input_char, dest):
+        self.transitions.setdefault(src, {}).setdefault(input_char, set()).add(dest)
 
     def add_final_state(self, state):
         self.final_states.add(state)
@@ -45,11 +46,11 @@ class NFA(object):
             states.update(new_states)
         return states
 
-    def next_state(self, states, input):
+    def next_state(self, states, input_char):
         dest_states = set()
         for state in states:
             state_transitions = self.transitions.get(state, {})
-            dest_states.update(state_transitions.get(input, []))
+            dest_states.update(state_transitions.get(input_char, []))
             dest_states.update(state_transitions.get(NFA.ANY, []))
         return frozenset(self._expand(dest_states))
 
@@ -69,18 +70,18 @@ class NFA(object):
         while frontier:
             current = frontier.pop()
             inputs = self.get_inputs(current)
-            for input in inputs:
-                if input == NFA.EPSILON: continue
-                new_state = self.next_state(current, input)
+            for input_char in inputs:
+                if input_char == NFA.EPSILON: continue
+                new_state = self.next_state(current, input_char)
                 if new_state not in seen:
                     frontier.append(new_state)
                     seen.add(new_state)
                     if self.is_final(new_state):
                         dfa.add_final_state(new_state)
-                if input == NFA.ANY:
+                if input_char == NFA.ANY:
                     dfa.set_default_transition(current, new_state)
                 else:
-                    dfa.add_transition(current, input, new_state)
+                    dfa.add_transition(current, input_char, new_state)
         return dfa
 
 
@@ -96,8 +97,8 @@ class DFA(object):
         self.defaults = {}
         self.final_states = set()
 
-    def add_transition(self, src, input, dest):
-        self.transitions.setdefault(src, {})[input] = dest
+    def add_transition(self, src, input_char, dest):
+        self.transitions.setdefault(src, {})[input_char] = dest
 
     def set_default_transition(self, src, dest):
         self.defaults[src] = dest
@@ -108,27 +109,27 @@ class DFA(object):
     def is_final(self, state):
         return state in self.final_states
 
-    def next_state(self, src, input):
+    def next_state(self, src, input_char):
         state_transitions = self.transitions.get(src, {})
-        return state_transitions.get(input, self.defaults.get(src, None))
+        return state_transitions.get(input_char, self.defaults.get(src, None))
 
-    def next_valid_string(self, input):
+    def next_valid_string(self, input_str):
         stack = []
 
         # Evaluate the DFA as far as possible
         state = self.start_state
-        i = -1
-        for i, x in enumerate(input):
-            stack.append((input[:i], state, x))
-            state = self.next_state(state, x)
+        char_idx = -1
+        for char_idx, input_char in enumerate(input_str):
+            stack.append((input_str[:char_idx], state, input_char))
+            state = self.next_state(state, input_char)
             if not state:
                 break
         else:
-            stack.append((input[:i + 1], state, None))
+            stack.append((input_str[:char_idx + 1], state, None))
 
         # Input word is already valid?
         if self.is_final(state):
-            return input
+            return input_str
 
         # Perform a 'wall following' search for the lexicographically smallest accepting state.
         while stack:
@@ -186,15 +187,32 @@ def find_all_matches(word, k, lookup_func):
       Every matching word within levenshtein distance k from the database.
     """
     lev = levenshtein_automaton(word, k).to_dfa()
-    match = lev.next_valid_string(u'\0')
+    match = lev.next_valid_string(u'\0')  # this is such a hack, todo: fix
     while match:
-        next = lookup_func(match)
-        if not next:
+        next_word = lookup_func(match)
+        if not next_word:
             return
-        if match == next:
+        if match == next_word:
             yield match
-            next += u'\0'
-        match = lev.next_valid_string(next)
+            next_word += u'\0'
+        match = lev.next_valid_string(next_word)
+
+
+def intersect(dfa1, dfa2):
+    """
+    unused code
+    """
+    stack = [('', dfa1.start_state, dfa2.start_state)]
+    while stack:
+        s, state1, state2 = stack.pop()
+        for edge in set(dfa1.edges(state1)).intersection(dfa2.edges(state2)):
+            state1 = dfa1.next(state1, edge)
+            state2 = dfa2.next(state2, edge)
+            if state1 and state2:
+                s = s + edge
+                stack.append((s, state1, state2))
+                if dfa1.is_final(state1) and dfa2.is_final(state2):
+                    yield s
 
 
 class Matcher(object):
@@ -268,8 +286,8 @@ if __name__ == '__main__':
     print(len(words))
 
     bkn = BKNode('banana')
-    for word in sorted(words):
-        bkn.insert(word)
+    for w in sorted(words):
+        bkn.insert(w)
 
     xs = range(10)
     ts = []  # times

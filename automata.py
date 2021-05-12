@@ -5,83 +5,120 @@ http://blog.notdot.net/2010/07/Damn-Cool-Algorithms-Levenshtein-Automata
 
 import bisect
 import time
+from typing import Dict
+from typing import FrozenSet
+from typing import Optional
+from typing import Set
+from typing import Tuple
+
+# defined types
+State = Tuple[int, int]  # tuple of (position, distance)
+DFAState = FrozenSet[State]  # a set of all NFA states reachable with the same input
 
 
 class NFA(object):
     """
     non-deterministic finite state automaton
-    from some state, given a transition, can end up at multiple states
+    from some state, given a transition (ie. a character), can end up at multiple states
+    
+    state is a tuple of (current_char_index, current_edit_distance)
     """
-    EPSILON = object()
-    ANY = object()
 
-    def __init__(self, start_state):
-        self.transitions = {}
-        self.final_states = set()
-        self._start_state = start_state
+    # special transition types
+    EPSILON: str = object()  # a transition that happens "for free" with no input, basically re.compile(r'')
+    ANY: str = object()  # a transition that happens "by default" with any input, basically re.compile(r'.')
+
+    def __init__(self):
+        self.transitions: Dict[State, Dict[str, Set[State]]] = dict()
+        self.final_states: Set[State] = set()
 
     @property
-    def start_state(self):
-        return frozenset(self._expand({self._start_state}))
+    def start_dfa_state(self) -> DFAState:
+        """
+        the (frozen) set of all states that are epsilon away from (0, 0)
+        """
+        return self._expand_epsilon({(0, 0)})
 
-    def add_transition(self, src, input_char, dest):
-        self.transitions.setdefault(src, {}).setdefault(input_char, set()).add(dest)
+    def add_transition(self,
+                       src: State,
+                       input_char: str,
+                       dest: State,
+                       ):
+        self.transitions.setdefault(src, dict()).setdefault(input_char, set()).add(dest)
 
-    def add_final_state(self, state):
+    def add_final_state(self, state: State):
         self.final_states.add(state)
 
-    def is_final(self, states):
-        return self.final_states.intersection(states)
+    def is_final_dfa_state(self, dfa_state: DFAState) -> bool:
+        return not self.final_states.isdisjoint(dfa_state)
 
-    def _expand(self, states):
+    def _expand_epsilon(self, states: Set[State]) -> DFAState:
         """
-        expands a set of states
-        to include states that are only epsilon-transitions away
+        expands a set of states in-place to include states that are any number of epsilon transitions away
         """
-        frontier = set(states)
+
+        frontier = set(states)  # make a copy for the frontier
         while frontier:
             state = frontier.pop()
-            new_states = self.transitions.get(state, {}).get(NFA.EPSILON, set()).difference(states)
+            new_states = self.transitions.get(state, dict()).get(NFA.EPSILON, set()).difference(states)
             frontier.update(new_states)
             states.update(new_states)
-        return states
+        return frozenset(states)
 
-    def next_state(self, states, input_char):
+    def next_dfa_state(self,
+                       dfa_state: DFAState,
+                       input_char: str,
+                       ) -> DFAState:
         dest_states = set()
-        for state in states:
-            state_transitions = self.transitions.get(state, {})
-            dest_states.update(state_transitions.get(input_char, []))
-            dest_states.update(state_transitions.get(NFA.ANY, []))
-        return frozenset(self._expand(dest_states))
+        for state in dfa_state:
+            state_transitions = self.transitions.get(state, dict())
+            dest_states.update(state_transitions.get(input_char, set()))
+            dest_states.update(state_transitions.get(NFA.ANY, set()))
+        return self._expand_epsilon(dest_states)
 
-    def get_inputs(self, states):
+    def get_inputs(self, dfa_state: DFAState) -> Set[str]:
         """
         outgoing transitions
         """
+
         inputs = set()
-        for state in states:
-            inputs.update(self.transitions.get(state, {}).keys())
+        for state in dfa_state:
+            inputs.update(self.transitions.get(state, dict()).keys())
         return inputs
 
-    def to_dfa(self):
-        dfa = DFA(self.start_state)
-        frontier = [self.start_state]
+    def to_dfa(self) -> 'DFA':
+        """
+        create a dfa from this nfa
+
+        each dfa state is the (frozen) set of all states reachable by a specific input
+        it's possible to use integers as state keys for the DFA to save space
+        eg: `collections.defaultdict(itertools.count().__next__)`
+
+        but since we only use this dfa once and then discard it, there isn't much point to space optimization
+        especially since we still need all frozen sets in-memory when building the dfa
+        so the max memory usage wouldn't change that much
+        """
+        dfa = DFA(self.start_dfa_state)
+
         seen = set()
+        frontier = [self.start_dfa_state]
         while frontier:
-            current = frontier.pop()
-            inputs = self.get_inputs(current)
-            for input_char in inputs:
-                if input_char == NFA.EPSILON: continue
-                new_state = self.next_state(current, input_char)
-                if new_state not in seen:
-                    frontier.append(new_state)
-                    seen.add(new_state)
-                    if self.is_final(new_state):
-                        dfa.add_final_state(new_state)
+            current_state = frontier.pop()
+
+            for input_char in self.get_inputs(current_state).difference({NFA.EPSILON}):
+
+                next_state = self.next_dfa_state(current_state, input_char)
+                if next_state not in seen:
+                    frontier.append(next_state)
+                    seen.add(next_state)
+                    if self.is_final_dfa_state(next_state):
+                        dfa.add_final_state(next_state)
+
                 if input_char == NFA.ANY:
-                    dfa.set_default_transition(current, new_state)
+                    dfa.set_default_transition(current_state, next_state)
                 else:
-                    dfa.add_transition(current, input_char, new_state)
+                    dfa.add_transition(current_state, input_char, next_state)
+
         return dfa
 
 
@@ -91,29 +128,47 @@ class DFA(object):
     from some state, given a transition, goes to a single next state
     """
 
-    def __init__(self, start_state):
-        self.start_state = start_state
-        self.transitions = {}
-        self.defaults = {}
-        self.final_states = set()
+    def __init__(self,
+                 start_state: DFAState,
+                 ):
+        self.start_state: DFAState = start_state
+        self.transitions: Dict[DFAState, Dict[str, DFAState]] = dict()
+        self.defaults: Dict[DFAState, DFAState] = dict()
+        self.final_states: Set[DFAState] = set()
 
-    def add_transition(self, src, input_char, dest):
-        self.transitions.setdefault(src, {})[input_char] = dest
+    def add_transition(self,
+                       src: DFAState,
+                       input_char: str,
+                       dest: DFAState,
+                       ):
+        self.transitions.setdefault(src, dict())[input_char] = dest
 
-    def set_default_transition(self, src, dest):
+    def set_default_transition(self,
+                               src: DFAState,
+                               dest: DFAState,
+                               ):
         self.defaults[src] = dest
 
-    def add_final_state(self, state):
+    def add_final_state(self,
+                        state: DFAState,
+                        ):
         self.final_states.add(state)
 
-    def is_final(self, state):
+    def is_final(self,
+                 state: Optional[DFAState],
+                 ) -> bool:
         return state in self.final_states
 
-    def next_state(self, src, input_char):
-        state_transitions = self.transitions.get(src, {})
+    def next_state(self,
+                   src: DFAState,
+                   input_char: str,
+                   ) -> Optional[DFAState]:
+        state_transitions = self.transitions.get(src, dict())
         return state_transitions.get(input_char, self.defaults.get(src, None))
 
-    def next_valid_string(self, input_str):
+    def next_valid_string(self,
+                          input_str: str,
+                          ) -> Optional[str]:
         stack = []
 
         # Evaluate the DFA as far as possible
@@ -133,11 +188,11 @@ class DFA(object):
 
         # Perform a 'wall following' search for the lexicographically smallest accepting state.
         while stack:
-            path, state, x = stack.pop()
-            x = self.find_next_edge(state, x)
-            if x is not None:
-                path += x
-                state = self.next_state(state, x)
+            path, state, char = stack.pop()
+            char = self.find_next_edge(state, char)
+            if char is not None:
+                path += char
+                state = self.next_state(state, char)
                 if self.is_final(state):
                     return path
                 stack.append((path, state, None))
@@ -145,18 +200,23 @@ class DFA(object):
 
     def find_next_edge(self, state, transition):
         next_allowed_transition = u'\0' if transition is None else chr(ord(transition) + 1)
-        state_transitions = self.transitions.get(state, {})
+        state_transitions = self.transitions.get(state, dict())
         if next_allowed_transition in state_transitions or state in self.defaults:
             return next_allowed_transition
-        labels = sorted(state_transitions.keys())
-        pos = bisect.bisect_left(labels, next_allowed_transition)
-        if pos < len(labels):
-            return labels[pos]
+
+        # labels = sorted(state_transitions.keys())
+        # pos = bisect.bisect_left(labels, next_allowed_transition)
+        # if pos < len(labels):
+        #     return labels[pos]
+        # return None
+        labels = [label for label in state_transitions.keys() if label >= next_allowed_transition]
+        if labels:
+            return min(labels)
         return None
 
 
 def levenshtein_automaton(word, k):
-    nfa = NFA((0, 0))
+    nfa = NFA()
     for index, char in enumerate(word):
         for dist in range(k + 1):
             # Correct character
@@ -202,7 +262,7 @@ def intersect(dfa1, dfa2):
     """
     unused code
     """
-    stack = [('', dfa1.start_state, dfa2.start_state)]
+    stack = [('', dfa1.start_dfa_state, dfa2.start_dfa_state)]
     while stack:
         s, state1, state2 = stack.pop()
         for edge in set(dfa1.edges(state1)).intersection(dfa2.edges(state2)):
@@ -211,13 +271,13 @@ def intersect(dfa1, dfa2):
             if state1 and state2:
                 s = s + edge
                 stack.append((s, state1, state2))
-                if dfa1.is_final(state1) and dfa2.is_final(state2):
+                if dfa1.is_final_dfa_state(state1) and dfa2.is_final_dfa_state(state2):
                     yield s
 
 
 class Matcher(object):
     def __init__(self, entries):
-        # self.sorted_entries = sorted(entries)
+        # self.sorted_entries = sorted(entries)  # re-sorting a list is O(1) after all
         self.sorted_entries = entries
         self.probes = 0
 
@@ -237,13 +297,13 @@ def levenshtein(s1, s2):
         return len(s2)
 
     previous_row = range(len(s2) + 1)
-    for i, c1 in enumerate(s1):
-        current_row = [i + 1]
-        for j, c2 in enumerate(s2):
-            insertions = previous_row[j + 1] + 1
+    for idx_1, char_1 in enumerate(s1):
+        current_row = [idx_1 + 1]
+        for idx_2, char_2 in enumerate(s2):
+            insertions = previous_row[idx_2 + 1] + 1
             # j+1 instead of j since previous_row and current_row are one character longer than s2
-            deletions = current_row[j] + 1
-            substitutions = previous_row[j] + (c1 != c2)
+            deletions = current_row[idx_2] + 1
+            substitutions = previous_row[idx_2] + (char_1 != char_2)
             current_row.append(min(insertions, deletions, substitutions))
         previous_row = current_row
 
@@ -253,7 +313,7 @@ def levenshtein(s1, s2):
 class BKNode(object):
     def __init__(self, term):
         self.term = term
-        self.children = {}
+        self.children = dict()
         self.results = []
 
     def insert(self, other):
@@ -263,55 +323,66 @@ class BKNode(object):
         else:
             self.children[distance] = BKNode(other)
 
-    def search(self, term, k, results=None):
-        if results is None:
-            results = []
+    def search(self, term, k, _output=None):
+        if _output is None:
+            _output = []  # todo: wrap this function and use a nonlocal inner function
         distance = levenshtein(self.term, term)
         counter = 1
         if distance <= k:
-            results.append(self.term)
-        for i in range(max(0, distance - k), distance + k + 1):
-            child = self.children.get(i)
-            if child:
-                counter += child.search(term, k, results)
-        self.results = results
+            _output.append(self.term)
+        for _dist in range(max(0, distance - k), distance + k + 1):
+            # child = self.children.get(_dist)
+            if _dist in self.children:
+                counter += self.children[_dist].search(term, k, _output)
+        self.results = _output
         return counter
 
 
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
-    words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
-    # words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
-    print(len(words))
+    # words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
+    words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
+    print(len(words), 'total words loaded')
 
     bkn = BKNode('banana')
     for w in sorted(words):
         bkn.insert(w)
 
-    xs = range(10)
+    query_str = 'asalamalaikum'
+    # query_str = 'bananananaan'
+    # query_str = 'noodles'
+
+    xs = list(range(10))
     ts = []  # times
     ps = []  # probes
     fs = []  # found
-    for i in xs:
-        m = Matcher(words)
-        t = time.time()
+    for x in xs:
         print('-' * 100)
-        found = list(find_all_matches('asalamalaikum', i, m))
-        # found = list(find_all_matches('bananananaan', i, m))
-        # found = list(find_all_matches('noodles', i, m))
-        print('distance:', i)
+        print('distance:', x)
+
+        print('lev automaton')
+        t = time.time()
+        m = Matcher(words)
+        found = list(find_all_matches(query_str, x, m))
         ts.append(time.time() - t)
-        print('time:', time.time() - t)
+        print('seconds:', time.time() - t)
         ps.append(float(m.probes) / len(words))
         print('probes:', m.probes, '=', float(m.probes) / len(words))
         fs.append(len(found))
         print('found:', len(found), found[:25])
 
+        print('bk tree')
         t = time.time()
-        print(bkn.search('asalamalaikum', k=i))
+        print('probes:', bkn.search(query_str, k=x))
+        print('seconds:', time.time() - t)
         print(len(bkn.results), sorted(bkn.results)[:25])
-        print(time.time() - t)
+
+        print(f'check all')
+        t = time.time()
+        results = [w for w in words if levenshtein(w, query_str) <= x]
+        print('seconds:', time.time() - t)
+        print(len(results), sorted(results)[:25])
 
     plt.twinx().plot(xs, ts, '-r', label='time')
     plt.twinx().plot(xs, ps, '-g', label='probes')

@@ -12,6 +12,8 @@ from typing import Set
 from typing import Tuple
 
 # defined types
+from find_replace_trie import Trie
+
 State = Tuple[int, int]  # tuple of (position, distance)
 DFAState = FrozenSet[State]  # a set of all NFA states reachable with the same input
 
@@ -349,6 +351,8 @@ if __name__ == '__main__':
     for w in sorted(words):
         bkn.insert(w)
 
+    trie = Trie.fromkeys(words)
+
     query_str = 'asalamalaikum'
     # query_str = 'bananananaan'
     # query_str = 'noodles'
@@ -377,6 +381,12 @@ if __name__ == '__main__':
         print('probes:', bkn.search(query_str, k=x))
         print('seconds:', time.time() - t)
         print(len(bkn.results), sorted(bkn.results)[:25])
+
+        print('trie')
+        t = time.time()
+        res = list(trie.levenshtein_lookup(query_str, x))
+        print('seconds:', time.time() - t)
+        print(len(res), sorted(res)[:25])
 
         print(f'check all')
         t = time.time()

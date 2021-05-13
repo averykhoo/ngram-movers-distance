@@ -532,21 +532,46 @@ class Trie(object):
         """
         lazy and probably not correct levenshtein lookup
         but better than nothing
+        todo: fix
+
+        probably better to go through all the words one by one
+        but stop and backtrack once it passes the distance threshold
+        also then the results will be in lexicographically sorted order, which is nice
+
+        need path to store where we are and the distances at each node
+        maybe use 2 lists
+        and a stack to store where we need to go
+        each next step has to contain the current node and next step
+
         """
         assert list(self.tokenizer('test-test test')) == list('test-test test'), "shouldn't use a tokenizer"
         assert distance >= 0
-
+        assert isinstance(word, str)
+        assert len(word) > 0
+        #
+        # _path = []
+        # _distances = []
+        # _stack = [(self.root, sorted(self.root.keys(), reverse=True), 0)]
+        # while _stack:
+        #     head, keys = _stack.pop(-1)
+        #     if keys:
+        #         key = keys.pop(-1)
+        #         _stack.append((head, keys))
+        #         head = head[key]
+        #         _path.append(key)
+        #         if head.REPLACEMENT is not _NOTHING:
+        #             yield self.detokenizer(_path)  # , head.REPLACEMENT
+        #         _stack.append((head, sorted(head.keys(), reverse=True)))
+        #     elif _path:
+        #         _path.pop(-1)
+        #     else:
+        #         assert not _stack
         states: List[Tuple[Tuple, Trie.Node, int]] = [((), self.root, 0)]
 
         def insertion():
             """
             doesn't allow multiple insertions one after another
             which means the implementation is incorrect
-            todo: fix
-
-            probably better to go through all the words one by one
-            but stop and backtrack once it passes the distance threshold
-            also then the results will be in lexicographically sorted order, which is nice
             """
             nonlocal states
             states, _prev_states = [], states

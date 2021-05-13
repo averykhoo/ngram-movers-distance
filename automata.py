@@ -354,7 +354,7 @@ if __name__ == '__main__':
     trie = Trie.fromkeys(words)
 
     query_str = 'asalamalaikum'
-    # query_str = 'zzzzzzzzzz'
+    # query_str = 'zz'  # edge case for trie
     # query_str = 'bananananaan'
     # query_str = 'noodles'
 
@@ -383,11 +383,11 @@ if __name__ == '__main__':
         print('seconds:', time.time() - t)
         print(len(bkn.results), sorted(bkn.results)[:25])
 
-        print('trie')
-        t = time.time()
-        res = list(trie.levenshtein_lookup(query_str, x))
-        print('seconds:', time.time() - t)
-        print(len(res), sorted(res)[:25])
+        # print('trie')
+        # t = time.time()
+        # res = list(trie.levenshtein_lookup(query_str, x))
+        # print('seconds:', time.time() - t)
+        # print(len(res), sorted(res)[:25])
 
         print(f'check all')
         t = time.time()

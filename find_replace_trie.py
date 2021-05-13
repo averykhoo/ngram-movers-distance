@@ -530,7 +530,7 @@ class Trie(object):
 
     def levenshtein_lookup(self, word: str, distance: int):
         """
-        lazy and probably not very good levenshtein lookup
+        lazy and probably not correct levenshtein lookup
         but better than nothing
         """
         assert list(self.tokenizer('test-test test')) == list('test-test test'), "shouldn't use a tokenizer"
@@ -539,6 +539,15 @@ class Trie(object):
         states: List[Tuple[Tuple, Trie.Node, int]] = [((), self.root, 0)]
 
         def insertion():
+            """
+            doesn't allow multiple insertions one after another
+            which means the implementation is incorrect
+            todo: fix
+
+            probably better to go through all the words one by one
+            but stop and backtrack once it passes the distance threshold
+            also then the results will be in lexicographically sorted order, which is nice
+            """
             nonlocal states
             states, _prev_states = [], states
             for _prev, _state, _distance in _prev_states:
@@ -550,6 +559,10 @@ class Trie(object):
         insertion()
 
         def dedupe():
+            """
+            should just use a dict from the start, instead of using a list and having to dedupe
+            but the dedupe might also not be totally correct
+            """
             nonlocal states
             states, _prev_states = [], states
             temp = dict()

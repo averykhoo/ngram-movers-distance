@@ -4,7 +4,9 @@ http://blog.notdot.net/2010/07/Damn-Cool-Algorithms-Levenshtein-Automata
 """
 
 import bisect
+import itertools
 import time
+from collections import defaultdict
 from typing import Dict
 from typing import FrozenSet
 from typing import Optional
@@ -93,16 +95,15 @@ class NFA(object):
         create a dfa from this nfa
 
         each dfa state is the (frozen) set of all states reachable by a specific input
-        it's possible to use integers as state keys for the DFA to save space
-        eg: `collections.defaultdict(itertools.count().__next__)`
+        instead of using the state directly, it's converted to a unique integer to save space
 
         but since we only use this dfa once and then discard it, there isn't much point to space optimization
         especially since we still need all frozen sets in-memory when building the dfa
-        so the max memory usage wouldn't change that much
+        so the max memory usage might not have changed much
         """
-        dfa = DFA(self.start_dfa_state)
+        dfa_node_ids: Dict[DFAState, int] = defaultdict(itertools.count().__next__)
+        dfa = DFA(dfa_node_ids[self.start_dfa_state])
 
-        seen = set()
         frontier = [self.start_dfa_state]
         while frontier:
             current_state = frontier.pop()
@@ -110,16 +111,15 @@ class NFA(object):
             for input_char in self.get_inputs(current_state).difference({NFA.EPSILON}):
 
                 next_state = self.next_dfa_state(current_state, input_char)
-                if next_state not in seen:
+                if next_state not in dfa_node_ids:
                     frontier.append(next_state)
-                    seen.add(next_state)
                     if self.is_final_dfa_state(next_state):
-                        dfa.add_final_state(next_state)
+                        dfa.add_final_state(dfa_node_ids[next_state])
 
                 if input_char == NFA.ANY:
-                    dfa.set_default_transition(current_state, next_state)
+                    dfa.set_default_transition(dfa_node_ids[current_state], dfa_node_ids[next_state])
                 else:
-                    dfa.add_transition(current_state, input_char, next_state)
+                    dfa.add_transition(dfa_node_ids[current_state], input_char, dfa_node_ids[next_state])
 
         return dfa
 
@@ -131,40 +131,40 @@ class DFA(object):
     """
 
     def __init__(self,
-                 start_state: DFAState,
+                 start_state: int,
                  ):
-        self.start_state: DFAState = start_state
-        self.transitions: Dict[DFAState, Dict[str, DFAState]] = dict()
-        self.defaults: Dict[DFAState, DFAState] = dict()
-        self.final_states: Set[DFAState] = set()
+        self.start_state: int = start_state
+        self.transitions: Dict[int, Dict[str, int]] = dict()
+        self.defaults: Dict[int, int] = dict()
+        self.final_states: Set[int] = set()
 
     def add_transition(self,
-                       src: DFAState,
+                       src: int,
                        input_char: str,
-                       dest: DFAState,
+                       dest: int,
                        ):
         self.transitions.setdefault(src, dict())[input_char] = dest
 
     def set_default_transition(self,
-                               src: DFAState,
-                               dest: DFAState,
+                               src: int,
+                               dest: int,
                                ):
         self.defaults[src] = dest
 
     def add_final_state(self,
-                        state: DFAState,
+                        state: int,
                         ):
         self.final_states.add(state)
 
     def is_final(self,
-                 state: Optional[DFAState],
+                 state: Optional[int],
                  ) -> bool:
         return state in self.final_states
 
     def next_state(self,
-                   src: DFAState,
+                   src: int,
                    input_char: str,
-                   ) -> Optional[DFAState]:
+                   ) -> Optional[int]:
         state_transitions = self.transitions.get(src, dict())
         return state_transitions.get(input_char, self.defaults.get(src, None))
 
@@ -354,6 +354,7 @@ if __name__ == '__main__':
     trie = Trie.fromkeys(words)
 
     query_str = 'asalamalaikum'
+    # query_str = 'zzzzzzzzzz'
     # query_str = 'bananananaan'
     # query_str = 'noodles'
 

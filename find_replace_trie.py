@@ -530,10 +530,8 @@ class Trie(object):
 
     def levenshtein_lookup(self, word: str, distance: int):
         """
-        lazy and probably not correct levenshtein lookup
+        lazy and not correct levenshtein lookup
         but better than nothing
-        tests seem to indicate that it functions correctly though
-        and idk why
         todo: fix
 
         probably better to go through all the words one by one
@@ -550,78 +548,123 @@ class Trie(object):
         assert distance >= 0
         assert isinstance(word, str)
         assert len(word) > 0
+
+        def parse_path(path):
+            chars = []
+            while path:
+                path, char = path
+                chars.append(char)
+
+            chars.reverse()
+            return self.detokenizer(chars)
+
+        _stack: List[Tuple[Tuple, Trie.Node, List[str], int, int]] = []  # path, node, keys, pos, dist
+
+        # add root node and try all possible deletions from query
+        for dist in range(distance + 1):
+            if dist < len(word):
+                _stack.append(((), self.root, sorted(self.root.keys(), reverse=True), dist, dist))
+
+        # special case: match empty string
+        if distance >= len(word and self.root.REPLACEMENT is not _NOTHING):
+            yield ''  # , self.root.REPLACEMENT
+
+        while _stack:
+            path, head, keys, pos, dist = _stack.pop(-1)
+
+            # any more downstream nodes to search?
+            if keys:
+                # take first key
+                key = keys.pop(-1)
+                _stack.append((path, head, keys, pos, dist))
+
+                # explore this key
+                next_path = (path, key)
+                next_head = head[key]
+                next_keys = sorted(next_head.keys(), reverse=True)
+
+                # we only want the cheapest options for each possible pos
+                options = dict()  # pos -> cheapest dist
+
+                # insertion into query
+                if dist + 1 <= distance:
+                    _stack.append((next_path, next_head, next_keys, pos, dist + 1))
+
+                # if we can delete the rest of the query, this is a valid output
+                if next_head.REPLACEMENT is not _NOTHING:
+                    if dist + (len(word) - pos) + (key != word[pos]) - 1 < distance:
+                        yield parse_path(next_path)  # , head.REPLACEMENT
+
+                # substitution or matching char
+                if pos + 1 < len(word):
+                    if key == word[pos]:
+                        _stack.append((next_path, next_head, next_keys, pos + 1, dist))
+                    elif dist + 1 <= distance:
+                        _stack.append((next_path, next_head, next_keys, pos + 1, dist + 1))
+
+                # deletion of char from query
+                if dist + 1 <= distance and pos + 1 < len(word):
+                    _stack.append((path, head, sorted(head.keys(), reverse=True), pos + 1, dist + 1))
+
+            # for k in _stack:
+            #     print((k[0], id(k[1]), k[2], k[3], k[4]))
+            # print()
+
         #
-        # _path = []
-        # _distances = []
-        # _stack = [(self.root, sorted(self.root.keys(), reverse=True), 0)]
-        # while _stack:
-        #     head, keys = _stack.pop(-1)
-        #     if keys:
-        #         key = keys.pop(-1)
-        #         _stack.append((head, keys))
-        #         head = head[key]
-        #         _path.append(key)
-        #         if head.REPLACEMENT is not _NOTHING:
-        #             yield self.detokenizer(_path)  # , head.REPLACEMENT
-        #         _stack.append((head, sorted(head.keys(), reverse=True)))
-        #     elif _path:
-        #         _path.pop(-1)
-        #     else:
-        #         assert not _stack
-        states: List[Tuple[Tuple, Trie.Node, int]] = [((), self.root, 0)]
-
-        def insertion():
-            """
-            doesn't perform multiple insertions one after another
-            which means the implementation may be incorrect
-            """
-            nonlocal states
-            states, _prev_states = [], states
-            for _prev, _state, _distance in _prev_states:
-                states.append((_prev, _state, _distance))
-                if _distance + 1 <= distance:
-                    for key, _next_state in _state.items():
-                        states.append(((_prev, key), _next_state, _distance + 1))  # insertion
-
-        insertion()
-
-        def dedupe():
-            """
-            should just use a dict from the start, instead of using a list and having to dedupe
-            but the dedupe might also not be totally correct
-            """
-            nonlocal states
-            states, _prev_states = [], states
-            temp = dict()
-            for _prev, _state, _distance in _prev_states:
-                if _prev not in temp:
-                    temp[_prev] = (_distance, _state)
-                elif temp[_prev][0] > _distance:
-                    temp[_prev] = (_distance, _state)
-            for _prev, (_distance, _state) in temp.items():
-                states.append((_prev, _state, _distance))
-
-        for char in word:
-            states, prev_states = [], states
-            for prev, state, current_distance in prev_states:
-                if current_distance + 1 <= distance:
-                    states.append((prev, state, current_distance + 1))  # deletion
-                    for key, next_state in state.items():
-                        states.append(((prev, key), next_state, current_distance + (key != char)))  # substitution
-                elif char in state:
-                    states.append(((prev, char), state[char], current_distance))
-            insertion()
-            dedupe()
-
-        for string, state, _dist in states:
-            assert _dist <= distance
-            if state.REPLACEMENT is not _NOTHING:
-                tmp = []
-                while string:
-                    tmp.append(string[-1])
-                    string = string[0]
-                tmp.reverse()
-                yield ''.join(tmp)
+        # states: List[Tuple[Tuple, Trie.Node, int]] = [((), self.root, 0)]
+        #
+        # def insertion():
+        #     """
+        #     doesn't perform multiple insertions one after another
+        #     which means the implementation is incorrect
+        #     """
+        #     nonlocal states
+        #     states, _prev_states = [], states
+        #     for _prev, _state, _distance in _prev_states:
+        #         states.append((_prev, _state, _distance))
+        #         if _distance + 1 <= distance:
+        #             for key, _next_state in _state.items():
+        #                 states.append(((_prev, key), _next_state, _distance + 1))  # insertion
+        #
+        # insertion()
+        #
+        # def dedupe():
+        #     """
+        #     should just use a dict from the start, instead of using a list and having to dedupe
+        #     but the dedupe might also not be totally correct
+        #     """
+        #     nonlocal states
+        #     states, _prev_states = [], states
+        #     temp = dict()
+        #     for _prev, _state, _distance in _prev_states:
+        #         if _prev not in temp:
+        #             temp[_prev] = (_distance, _state)
+        #         elif temp[_prev][0] > _distance:
+        #             temp[_prev] = (_distance, _state)
+        #     for _prev, (_distance, _state) in temp.items():
+        #         states.append((_prev, _state, _distance))
+        #
+        # for char in word:
+        #     states, prev_states = [], states
+        #     for prev, state, current_distance in prev_states:
+        #         if current_distance + 1 <= distance:
+        #             states.append((prev, state, current_distance + 1))  # deletion
+        #             for key, next_state in state.items():
+        #                 states.append(((prev, key), next_state, current_distance + (key != char)))  # substitution
+        #         elif char in state:
+        #             states.append(((prev, char), state[char], current_distance))
+        #     insertion()
+        #     dedupe()
+        #
+        # for string, state, _dist in states:
+        #     assert _dist <= distance
+        #     if state.REPLACEMENT is not _NOTHING:
+        #         tmp = []
+        #         while string:
+        #             tmp.append(string[-1])
+        #             string = string[0]
+        #         tmp.reverse()
+        #         yield ''.join(tmp)
 
     def _yield_tokens(self,
                       file_path: Union[str, os.PathLike],
@@ -1189,9 +1232,10 @@ def self_test():
 if __name__ == '__main__':
     words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
     trie = Trie.fromkeys(words)
-    for i in range(10):
+    for i in range(3):
+        print('-' * 99)
         print(i)
         t = time.time()
-        res = list(trie.levenshtein_lookup('asalamalaikum', i))
+        res = list(trie.levenshtein_lookup('zz', i))
         print(time.time() - t)
         print(len(res), sorted(res)[:25])

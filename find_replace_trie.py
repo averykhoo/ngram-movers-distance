@@ -532,6 +532,8 @@ class Trie(object):
         """
         lazy and probably not correct levenshtein lookup
         but better than nothing
+        tests seem to indicate that it functions correctly though
+        and idk why
         todo: fix
 
         probably better to go through all the words one by one
@@ -570,8 +572,8 @@ class Trie(object):
 
         def insertion():
             """
-            doesn't allow multiple insertions one after another
-            which means the implementation is incorrect
+            doesn't perform multiple insertions one after another
+            which means the implementation may be incorrect
             """
             nonlocal states
             states, _prev_states = [], states

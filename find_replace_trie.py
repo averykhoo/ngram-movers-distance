@@ -314,6 +314,7 @@ class Trie(object):
             self.pop(key)
 
     def items(self):
+        # todo: special case for empty str?
         _path = []
         _stack = [(self.root, sorted(self.root.keys(), reverse=True))]
         while _stack:
@@ -552,6 +553,7 @@ class Trie(object):
         # todo: allow specifying ins, del, sub costs
         # todo: maybe try implementing as damerau-levenshtein (ie. with transposition)
         # todo: maybe allow returning values not just keys?
+        # todo: special case for empty str?
 
         _path = []
         _dp_table = [range(len(word) + 1)]

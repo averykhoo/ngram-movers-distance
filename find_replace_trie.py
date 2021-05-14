@@ -584,6 +584,13 @@ class Trie(object):
                 next_keys = sorted(next_head.keys(), reverse=True)
 
                 # we only want the cheapest options for each possible pos
+                # this is actually equivalent to just running levenshtein, isn't it...
+                # assuming i store the dp matrix in a stack, i can backtrack and continue
+                # use min(stack[-1]) to determine best current cost and backtrack on that too
+                # todo: reuse code from levenshtein function
+                # todo: use a _path again since it's possible and saves space
+                # maybe: allow specifying ins, del, sub costs
+                # maybe: maybe try implementing as damerau-levenshtein (ie. with transposition)
                 options: List[Optional[int]] = [None] * len(word)  # pos -> cheapest dist
 
                 # if we can delete the rest of the query, this is a valid output

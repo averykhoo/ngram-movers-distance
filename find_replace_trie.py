@@ -586,85 +586,36 @@ class Trie(object):
                 # we only want the cheapest options for each possible pos
                 options = dict()  # pos -> cheapest dist
 
-                # insertion into query
-                if dist + 1 <= distance:
-                    _stack.append((next_path, next_head, next_keys, pos, dist + 1))
-
                 # if we can delete the rest of the query, this is a valid output
                 if next_head.REPLACEMENT is not _NOTHING:
                     if dist + (len(word) - pos) + (key != word[pos]) - 1 < distance:
                         yield parse_path(next_path)  # , head.REPLACEMENT
 
+                # insertion into query
+                if dist + 1 <= distance:
+                    # _stack.append((next_path, next_head, next_keys, pos, dist + 1))
+                    options[pos] = min(dist + 1, options.get(pos, dist + 1))
+
                 # substitution or matching char
                 if pos + 1 < len(word):
                     if key == word[pos]:
-                        _stack.append((next_path, next_head, next_keys, pos + 1, dist))
+                        # _stack.append((next_path, next_head, next_keys, pos + 1, dist))
+                        options[pos + 1] = min(dist, options.get(pos + 1, dist))
                     elif dist + 1 <= distance:
-                        _stack.append((next_path, next_head, next_keys, pos + 1, dist + 1))
+                        # _stack.append((next_path, next_head, next_keys, pos + 1, dist + 1))
+                        options[pos + 1] = min(dist + 1, options.get(pos + 1, dist + 1))
 
                 # deletion of char from query
-                if dist + 1 <= distance and pos + 1 < len(word):
-                    _stack.append((path, head, sorted(head.keys(), reverse=True), pos + 1, dist + 1))
+                max_deletions = min(distance - dist, len(word)-pos)
+                for d in range(1, max_deletions + 1):
+                    options[pos + d] = min(dist + d, options.get(pos + d, dist + d))
 
-            # for k in _stack:
-            #     print((k[0], id(k[1]), k[2], k[3], k[4]))
-            # print()
+                # add for each pos and dist?
+                # but this means we'll have a lot of duplicates to deal with later on
+                for p, d in options.items():
+                    pass  # todo
 
-        #
-        # states: List[Tuple[Tuple, Trie.Node, int]] = [((), self.root, 0)]
-        #
-        # def insertion():
-        #     """
-        #     doesn't perform multiple insertions one after another
-        #     which means the implementation is incorrect
-        #     """
-        #     nonlocal states
-        #     states, _prev_states = [], states
-        #     for _prev, _state, _distance in _prev_states:
-        #         states.append((_prev, _state, _distance))
-        #         if _distance + 1 <= distance:
-        #             for key, _next_state in _state.items():
-        #                 states.append(((_prev, key), _next_state, _distance + 1))  # insertion
-        #
-        # insertion()
-        #
-        # def dedupe():
-        #     """
-        #     should just use a dict from the start, instead of using a list and having to dedupe
-        #     but the dedupe might also not be totally correct
-        #     """
-        #     nonlocal states
-        #     states, _prev_states = [], states
-        #     temp = dict()
-        #     for _prev, _state, _distance in _prev_states:
-        #         if _prev not in temp:
-        #             temp[_prev] = (_distance, _state)
-        #         elif temp[_prev][0] > _distance:
-        #             temp[_prev] = (_distance, _state)
-        #     for _prev, (_distance, _state) in temp.items():
-        #         states.append((_prev, _state, _distance))
-        #
-        # for char in word:
-        #     states, prev_states = [], states
-        #     for prev, state, current_distance in prev_states:
-        #         if current_distance + 1 <= distance:
-        #             states.append((prev, state, current_distance + 1))  # deletion
-        #             for key, next_state in state.items():
-        #                 states.append(((prev, key), next_state, current_distance + (key != char)))  # substitution
-        #         elif char in state:
-        #             states.append(((prev, char), state[char], current_distance))
-        #     insertion()
-        #     dedupe()
-        #
-        # for string, state, _dist in states:
-        #     assert _dist <= distance
-        #     if state.REPLACEMENT is not _NOTHING:
-        #         tmp = []
-        #         while string:
-        #             tmp.append(string[-1])
-        #             string = string[0]
-        #         tmp.reverse()
-        #         yield ''.join(tmp)
+
 
     def _yield_tokens(self,
                       file_path: Union[str, os.PathLike],

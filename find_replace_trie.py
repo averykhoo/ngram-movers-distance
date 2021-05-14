@@ -584,7 +584,7 @@ class Trie(object):
                 next_keys = sorted(next_head.keys(), reverse=True)
 
                 # we only want the cheapest options for each possible pos
-                options = dict()  # pos -> cheapest dist
+                options: List[Optional[int]] = [None] * len(word)  # pos -> cheapest dist
 
                 # if we can delete the rest of the query, this is a valid output
                 if next_head.REPLACEMENT is not _NOTHING:
@@ -594,28 +594,38 @@ class Trie(object):
                 # insertion into query
                 if dist + 1 <= distance:
                     # _stack.append((next_path, next_head, next_keys, pos, dist + 1))
-                    options[pos] = min(dist + 1, options.get(pos, dist + 1))
+                    if options[pos] is None:
+                        options[pos] = dist + 1
+                    else:
+                        options[pos] = min(dist + 1, options[pos])
 
                 # substitution or matching char
                 if pos + 1 < len(word):
                     if key == word[pos]:
                         # _stack.append((next_path, next_head, next_keys, pos + 1, dist))
-                        options[pos + 1] = min(dist, options.get(pos + 1, dist))
+                        if options[pos + 1] is None:
+                            options[pos + 1] = dist
+                        else:
+                            options[pos + 1] = min(dist, options[pos + 1])
                     elif dist + 1 <= distance:
                         # _stack.append((next_path, next_head, next_keys, pos + 1, dist + 1))
-                        options[pos + 1] = min(dist + 1, options.get(pos + 1, dist + 1))
+                        if options[pos + 1] is None:
+                            options[pos + 1] = dist + 1
+                        else:
+                            options[pos + 1] = min(dist + 1, options[pos + 1])
 
                 # deletion of char from query
-                max_deletions = min(distance - dist, len(word)-pos)
+                max_deletions = min(distance - dist, len(word) - pos)
                 for d in range(1, max_deletions + 1):
-                    options[pos + d] = min(dist + d, options.get(pos + d, dist + d))
+                    if options[pos + d] is None:
+                        options[pos + d] = dist + d
+                    else:
+                        options[pos + d] = min(dist + d, options[pos + d])
 
                 # add for each pos and dist?
                 # but this means we'll have a lot of duplicates to deal with later on
-                for p, d in options.items():
+                for p, d in enumerate(options):
                     pass  # todo
-
-
 
     def _yield_tokens(self,
                       file_path: Union[str, os.PathLike],

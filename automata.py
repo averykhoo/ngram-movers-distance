@@ -343,19 +343,26 @@ class BKNode(object):
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
-    # words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
-    words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
-    print(len(words), 'total words loaded')
+    words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
+    # words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
+    print(len(words), 'total words sorted and loaded')
 
+    print('loading bk tree')
+    t = time.time()
     bkn = BKNode('banana')
     for w in sorted(words):
         bkn.insert(w)
+    print('seconds:', time.time() - t)
 
+    print('loading trie')
+    t = time.time()
     trie = Trie.fromkeys(words)
+    print('seconds:', time.time() - t)
 
-    query_str = 'asalamalaikum'
-    # query_str = 'zz'  # edge case for trie
-    # query_str = 'bananananaan'
+    # query_str = 'asalamalaikum'
+    # query_str = 'zz'  # previous edge case for trie
+    # query_str = 'tion'  # previous edge case for trie
+    query_str = 'bananananaan'
     # query_str = 'noodles'
 
     xs = list(range(10))
@@ -381,13 +388,13 @@ if __name__ == '__main__':
         t = time.time()
         print('probes:', bkn.search(query_str, k=x))
         print('seconds:', time.time() - t)
-        print(len(bkn.results), sorted(bkn.results)[:25])
+        print(len(set(bkn.results)), sorted(set(bkn.results))[:25])
 
-        # print('trie')
-        # t = time.time()
-        # res = list(trie.levenshtein_lookup(query_str, x))
-        # print('seconds:', time.time() - t)
-        # print(len(res), sorted(res)[:25])
+        print('trie')
+        t = time.time()
+        res = list(trie.levenshtein_lookup(query_str, x))
+        print('seconds:', time.time() - t)
+        print(len(res), sorted(res)[:25])
 
         print(f'check all')
         t = time.time()

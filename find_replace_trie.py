@@ -549,90 +549,46 @@ class Trie(object):
         assert isinstance(word, str)
         assert len(word) > 0
 
-        def parse_path(path):
-            chars = []
-            while path:
-                path, char = path
-                chars.append(char)
+        # todo: allow specifying ins, del, sub costs
+        # todo: maybe try implementing as damerau-levenshtein (ie. with transposition)
+        # todo: maybe allow returning values not just keys?
 
-            chars.reverse()
-            return self.detokenizer(chars)
-
-        _stack: List[Tuple[Tuple, Trie.Node, List[str], int, int]] = []  # path, node, keys, pos, dist
-
-        # add root node and try all possible deletions from query
-        for dist in range(distance + 1):
-            if dist < len(word):
-                _stack.append(((), self.root, sorted(self.root.keys(), reverse=True), dist, dist))
-
-        # special case: match empty string
-        if distance >= len(word and self.root.REPLACEMENT is not _NOTHING):
-            yield ''  # , self.root.REPLACEMENT
+        _path = []
+        _dp_table = [range(len(word) + 1)]
+        _stack = [(self.root, sorted(self.root.keys(), reverse=True))]
 
         while _stack:
-            path, head, keys, pos, dist = _stack.pop(-1)
-
-            # any more downstream nodes to search?
+            head, keys = _stack.pop(-1)
             if keys:
-                # take first key
                 key = keys.pop(-1)
-                _stack.append((path, head, keys, pos, dist))
+                _stack.append((head, keys))
 
-                # explore this key
-                next_path = (path, key)
+                assert len(_dp_table) > 0
                 next_head = head[key]
-                next_keys = sorted(next_head.keys(), reverse=True)
+                next_row = [len(_dp_table)]
 
-                # we only want the cheapest options for each possible pos
-                # this is actually equivalent to just running levenshtein, isn't it...
-                # assuming i store the dp matrix in a stack, i can backtrack and continue
-                # use min(stack[-1]) to determine best current cost and backtrack on that too
-                # todo: reuse code from levenshtein function
-                # todo: use a _path again since it's possible and saves space
-                # maybe: allow specifying ins, del, sub costs
-                # maybe: maybe try implementing as damerau-levenshtein (ie. with transposition)
-                options: List[Optional[int]] = [None] * len(word)  # pos -> cheapest dist
+                for idx_2, char_2 in enumerate(word):
+                    insertions = _dp_table[-1][idx_2 + 1] + 1
+                    # j+1 instead of j since _dp_table[-1] and current_row are one character longer than s2
+                    deletions = next_row[idx_2] + 1
+                    substitutions = _dp_table[-1][idx_2] + (key != char_2)
+                    next_row.append(min(insertions, deletions, substitutions))
 
-                # if we can delete the rest of the query, this is a valid output
-                if next_head.REPLACEMENT is not _NOTHING:
-                    if dist + (len(word) - pos) + (key != word[pos]) - 1 < distance:
-                        yield parse_path(next_path)  # , head.REPLACEMENT
+                # early exit?
+                if min(next_row) <= distance:
+                    _path.append(key)
+                    _dp_table.append(next_row)
+                    _stack.append((next_head, sorted(next_head.keys(), reverse=True)))
+                    if next_row[-1] <= distance and next_head.REPLACEMENT is not _NOTHING:
+                        yield self.detokenizer(_path)  # , next_head.REPLACEMENT
 
-                # insertion into query
-                if dist + 1 <= distance:
-                    # _stack.append((next_path, next_head, next_keys, pos, dist + 1))
-                    if options[pos] is None:
-                        options[pos] = dist + 1
-                    else:
-                        options[pos] = min(dist + 1, options[pos])
+            elif _path:
+                _path.pop(-1)
+                _dp_table.pop(-1)
 
-                # substitution or matching char
-                if pos + 1 < len(word):
-                    if key == word[pos]:
-                        # _stack.append((next_path, next_head, next_keys, pos + 1, dist))
-                        if options[pos + 1] is None:
-                            options[pos + 1] = dist
-                        else:
-                            options[pos + 1] = min(dist, options[pos + 1])
-                    elif dist + 1 <= distance:
-                        # _stack.append((next_path, next_head, next_keys, pos + 1, dist + 1))
-                        if options[pos + 1] is None:
-                            options[pos + 1] = dist + 1
-                        else:
-                            options[pos + 1] = min(dist + 1, options[pos + 1])
-
-                # deletion of char from query
-                max_deletions = min(distance - dist, len(word) - pos)
-                for d in range(1, max_deletions + 1):
-                    if options[pos + d] is None:
-                        options[pos + d] = dist + d
-                    else:
-                        options[pos + d] = min(dist + d, options[pos + d])
-
-                # add for each pos and dist?
-                # but this means we'll have a lot of duplicates to deal with later on
-                for p, d in enumerate(options):
-                    pass  # todo
+            else:
+                assert not _stack
+                assert len(_dp_table) == 1
 
     def _yield_tokens(self,
                       file_path: Union[str, os.PathLike],

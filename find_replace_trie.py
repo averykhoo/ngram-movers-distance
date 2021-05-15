@@ -34,6 +34,9 @@ class Match:
                  ):
         """
         match result (similar to re.Match, but currently using token indices because of how tokenization works)
+        todo: normalize to char index
+        todo: use a frozen dataclass
+        todo: just refer to original string once we have the char indices, for compat
 
         :param start: index of start TOKEN (not char)
         :param end: index after end token
@@ -529,31 +532,27 @@ class Trie(object):
             self[sequence] = replacement
         return self
 
-    def levenshtein_lookup(self, word: str, distance: int):
+    def levenshtein_lookup(self,
+                           word: str,
+                           distance: int,
+                           insertion_cost: Union[int, float] = 1,
+                           deletion_cost: Union[int, float] = 1,
+                           substitution_cost: Union[int, float] = 1,
+                           ) -> Generator[str, Any, None]:
         """
-        lazy and not correct levenshtein lookup
-        but better than nothing
-        todo: fix
-
-        probably better to go through all the words one by one
-        but stop and backtrack once it passes the distance threshold
-        also then the results will be in lexicographically sorted order, which is nice
-
-        need path to store where we are and the distances at each node
-        maybe use 2 lists
-        and a stack to store where we need to go
-        each next step has to contain the current node and next step
-
+        levenshtein / edit distance based approximate string lookup
+        todo: maybe try implementing as damerau-levenshtein (ie. with transposition)
+        todo: maybe allow returning values not just keys?
+        todo: special case for empty str?
+        todo: special case for distance = 0
         """
         assert list(self.tokenizer('test-test test')) == list('test-test test'), "shouldn't use a tokenizer"
         assert distance >= 0
         assert isinstance(word, str)
         assert len(word) > 0
-
-        # todo: allow specifying ins, del, sub costs
-        # todo: maybe try implementing as damerau-levenshtein (ie. with transposition)
-        # todo: maybe allow returning values not just keys?
-        # todo: special case for empty str?
+        assert insertion_cost >= 0
+        assert deletion_cost >= 0
+        assert substitution_cost >= 0
 
         _path = []
         _dp_table = [range(len(word) + 1)]
@@ -570,10 +569,13 @@ class Trie(object):
                 next_row = [len(_dp_table)]
 
                 for idx_2, char_2 in enumerate(word):
-                    insertions = _dp_table[-1][idx_2 + 1] + 1
-                    # j+1 instead of j since _dp_table[-1] and current_row are one character longer than s2
-                    deletions = next_row[idx_2] + 1
-                    substitutions = _dp_table[-1][idx_2] + (key != char_2)
+                    # [idx_2 + 1] instead of j since _dp_table[-1] and current_row are one character longer than word
+                    insertions = _dp_table[-1][idx_2 + 1] + insertion_cost
+                    deletions = next_row[idx_2] + deletion_cost
+                    if key == char_2:
+                        substitutions = _dp_table[-1][idx_2]
+                    else:
+                        substitutions = _dp_table[-1][idx_2] + substitution_cost
                     next_row.append(min(insertions, deletions, substitutions))
 
                 # early exit?

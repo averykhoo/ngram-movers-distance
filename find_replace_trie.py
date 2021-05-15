@@ -734,19 +734,19 @@ class Trie(object):
                         # longest subsequence matching does not allow one match to start within another match
                         if not allow_overlapping:
                             matches_to_remove.update(range(span_start + 1, index + 1))
-                            spans_to_remove.update(range(span_start + 1, index + 1))
+                            # spans_to_remove.update(range(span_start + 1, index + 1))
 
                 else:
                     # failed to match the current token
                     spans_to_remove.add(span_start)
 
             # remove impossible spans and matches from queues
-            for span_start in matches_to_remove:
-                if span_start in matches:
-                    del matches[span_start]
-            for span_start in spans_to_remove:
-                if span_start in spans:
-                    del spans[span_start]
+            for span_start in matches_to_remove.intersection(matches):
+                del matches[span_start]
+            for span_start in matches_to_remove.intersection(spans):
+                del spans[span_start]
+            for span_start in spans_to_remove.intersection(spans):
+                del spans[span_start]
 
             # get indices of matches and spans
             first_span = min(spans) if spans else index

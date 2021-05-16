@@ -582,7 +582,7 @@ class Trie(object):
                 if min(next_row) <= distance:
                     _path.append(key)
                     _dp_table.append(next_row)
-                    _stack.append((next_head, sorted(next_head.keys(), reverse=True)))
+                    _stack.append((next_head, list(next_head.keys())))
                     if next_row[-1] <= distance and next_head.REPLACEMENT is not _NOTHING:
                         yield self.detokenizer(_path)  # , next_head.REPLACEMENT
 

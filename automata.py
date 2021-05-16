@@ -284,6 +284,7 @@ class Matcher(object):
         self.probes = 0
 
     def __call__(self, word):
+        # todo: consider previous index and set lo=...
         self.probes += 1
         pos = bisect.bisect_left(self.sorted_entries, word)
         if pos < len(self.sorted_entries):

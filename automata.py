@@ -282,11 +282,12 @@ class Matcher(object):
         # self.sorted_entries = sorted(entries)  # re-sorting a list is O(1) after all
         self.sorted_entries = entries
         self.probes = 0
+        self.prev = 0
 
     def __call__(self, word):
-        # todo: consider previous index and set lo=...
         self.probes += 1
-        pos = bisect.bisect_left(self.sorted_entries, word)
+        pos = bisect.bisect_left(self.sorted_entries, word, lo=self.prev)
+        self.prev = pos
         if pos < len(self.sorted_entries):
             return self.sorted_entries[pos]
         else:

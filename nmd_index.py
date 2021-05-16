@@ -308,6 +308,8 @@ class ApproxWordList5:
                             dim: Union[int, float],
                             top_k: int,
                             ) -> Counter:
+        # todo: use existing indices and calculate cosine distance
+        # todo: use existing indices and calculate jaccard
 
         assert isinstance(top_k, int) and top_k >= 1
         len_word = len(word)

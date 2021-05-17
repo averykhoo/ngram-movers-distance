@@ -2,6 +2,7 @@ import io
 import string
 import sys
 import time
+from numbers import Number
 from typing import Callable
 from typing import Generator
 from typing import Mapping
@@ -9,50 +10,76 @@ from unittest.mock import sentinel
 
 from pympler import asizeof
 
-NON_LIST_ITERABLES = (
+NOT_ITERABLE = (
     io.IOBase,
     str,
     bytes,
     bytearray,
     range,
+    Number,
+    Generator,
+    Callable,
+    type,
 )
 
 
 def deep_sizeof(obj):
     sizes = dict()
-    stack = [obj]
+    stack = {id(obj): obj}
+
+    def add_to_stack(thing):
+        if id(thing) not in sizes:
+            stack[id(thing)] = thing
 
     while stack:
-        item = stack.pop(-1)
+        item_id, item = stack.popitem()
 
         # already counted
-        if id(item) in sizes:
+        if item_id in sizes:
             continue
 
         # count size of item
-        sizes[id(item)] = sys.getsizeof(item)
+        sizes[item_id] = sys.getsizeof(item)
+
+        # nothing to recurse into
+        if isinstance(item, NOT_ITERABLE):
+            continue
 
         # recurse into dict-like item
-        # noinspection PyTypeChecker
         if isinstance(item, (Mapping, dict)):
-            stack.extend(item.keys())
-            stack.extend(item.values())
+            for key in item.keys():
+                add_to_stack(key)
+            for value in item.values():
+                add_to_stack(value)
 
-        # recurse into list-like item
-        elif hasattr(item, '__iter__') and hasattr(item, '__getitem__') and not isinstance(item, NON_LIST_ITERABLES):
-            stack.extend(item)
+        # recurse into list-like item (but not range, range_iterator, map, filter, etc)
+        # this will also recurse into a dict, but deduplication will handle this case
+        if hasattr(item, '__iter__') and hasattr(item, '__getitem__'):
+            for key in item:
+                add_to_stack(key)
 
         # recurse into a class instance
         if hasattr(item, '__dict__'):
-            stack.extend(item.__dict__.keys())
-            stack.extend(item.__dict__.values())
+            for key in item.__dict__.keys():
+                add_to_stack(key)
+            for value in item.__dict__.values():
+                add_to_stack(value)
 
-        # get any additional variables
+        # recurse into a class instance (slots can co-exist with dict)
+        if hasattr(item, '__slots__'):
+            for attr in item.__slots__:
+                if hasattr(item, attr):
+                    add_to_stack(getattr(item, attr))
+
+        # overwrite for numpy things
+        if hasattr(item, 'nbytes'):
+            sizes[item_id] = item.nbytes
+
+        # recurse into non-numpy things
         else:
             for attr in dir(item):
-                if not (attr.startswith('__') or attr.endswith('__')):
-                    if not isinstance(getattr(item, attr), (Callable, type, Generator)):
-                        stack.append(getattr(item, attr))
+                if attr[:2] != '__' and attr[-2:] != '__':
+                    add_to_stack(getattr(item, attr))
 
     return sum(sizes.values())
 
@@ -99,9 +126,8 @@ class NodeC:
 
 
 if __name__ == '__main__':
-
     charset = string.printable
-    depth = 1000
+    depth = 10
 
     t = time.time()
     for _ in range(10):
@@ -113,8 +139,8 @@ if __name__ == '__main__':
                 if char < 'M':
                     head[char].REPLACEMENT = char * 13
             head = head['a']
-    print(time.time() - t)
-    print('n1', asizeof.asizeof(n1), deep_sizeof(n1))
+    t = time.time() - t
+    print('n1', asizeof.asizeof(n1), deep_sizeof(n1), t)
 
     FLAG = object()
     t = time.time()
@@ -127,8 +153,8 @@ if __name__ == '__main__':
                 if char < 'M':
                     head[char][FLAG] = char * 13
             head = head['a']
-    print(time.time() - t)
-    print('n2', asizeof.asizeof(n2), deep_sizeof(n2))
+    t = time.time() - t
+    print('n2', asizeof.asizeof(n2), deep_sizeof(n2), t)
 
     FLAG2 = object()
     t = time.time()
@@ -141,8 +167,8 @@ if __name__ == '__main__':
                 if char < 'M':
                     head[char][FLAG] = FLAG2
             head = head['a']
-    print(time.time() - t)
-    print('n3', asizeof.asizeof(n3), deep_sizeof(n3))
+    t = time.time() - t
+    print('n3', asizeof.asizeof(n3), deep_sizeof(n3), t)
 
     flag = sentinel.flag
     t = time.time()
@@ -155,8 +181,8 @@ if __name__ == '__main__':
                 if char < 'M':
                     head[char][flag] = char * 13
             head = head['a']
-    print(time.time() - t)
-    print('n4', asizeof.asizeof(n4), deep_sizeof(n4))
+    t = time.time() - t
+    print('n4', asizeof.asizeof(n4), deep_sizeof(n4), t)
 
     t = time.time()
     for _ in range(10):
@@ -168,8 +194,8 @@ if __name__ == '__main__':
                 if char < 'M':
                     head[char].REPLACEMENT = char * 13
             head = head['a']
-    print(time.time() - t)
-    print('n5', asizeof.asizeof(n5), deep_sizeof(n5))
+    t = time.time() - t
+    print('n5', asizeof.asizeof(n5), deep_sizeof(n5), t)
 
     t = time.time()
     for _ in range(10):
@@ -181,7 +207,12 @@ if __name__ == '__main__':
                 if char < 'M':
                     head.DATA[char].REPLACEMENT = char * 13
             head = head.DATA['a']
-    print(time.time() - t)
-    print('n6', asizeof.asizeof(n6), deep_sizeof(n6))
+    t = time.time() - t
+    print('n6', asizeof.asizeof(n6), deep_sizeof(n6), t)
 
     # print([(n, getattr(n1, n)) for n in dir(n1)])
+
+    import numpy as np
+
+    print(deep_sizeof(np.array(range(10))))
+    print(deep_sizeof(np.array(range(1000))))

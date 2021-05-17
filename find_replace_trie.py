@@ -152,11 +152,25 @@ class Trie(object):
         return _trie
 
     class Node(dict):
-        __slots__ = ('REPLACEMENT',)
+        # __slots__ = ('REPLACEMENT',)
+        #
+        # # noinspection PyMissingConstructor
+        # def __init__(self):
+        #     self.REPLACEMENT = _NOTHING
 
-        # noinspection PyMissingConstructor
-        def __init__(self):
-            self.REPLACEMENT = _NOTHING
+        __slots__ = ()
+
+        @property
+        def REPLACEMENT(self):
+            return self.get(_NOTHING, _NOTHING)
+
+        @REPLACEMENT.setter
+        def REPLACEMENT(self, value):
+            if value is _NOTHING:
+                if _NOTHING in self:
+                    del self[_NOTHING]
+            else:
+                self[_NOTHING] = value
 
     def __init__(self,
                  replacements: Optional[REPLACEMENTS_TYPE] = None,
@@ -563,6 +577,8 @@ class Trie(object):
             if keys:
                 key = keys.pop(-1)
                 _stack.append((head, keys))
+                if key is _NOTHING:
+                    continue
 
                 assert len(_dp_table) > 0
                 next_head = head[key]

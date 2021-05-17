@@ -43,8 +43,9 @@ def deep_sizeof(obj):
 
         # special case for numpy objects
         if hasattr(item, 'nbytes'):
-            sizes[item_id] = item.nbytes
-            continue
+            if isinstance(item.nbytes, Number):
+                sizes[item_id] = item.nbytes
+                continue
 
         # nothing to recurse into
         if isinstance(item, NOT_ITERABLE):
@@ -75,11 +76,10 @@ def deep_sizeof(obj):
             for attr in item.__slots__:
                 add_to_stack(getattr(item, attr, None))
 
-        # recurse into attributes (DANGER: will call a 'copy' method)
+        # recurse into attributes (DANGER: still calls np.array().T recursively forever)
         for attr in dir(item):
             if not isinstance(getattr(type(item), attr, None), (property, type, Callable)):
-                if attr[:2] != '__' and attr[-2:] != '__':
-                    print(attr)
+                if attr[:2] != '__' and attr[-2:] != '__':  # can be fooled by magic method like names
                     add_to_stack(getattr(item, attr))
 
     return sum(sizes.values())
@@ -217,3 +217,7 @@ if __name__ == '__main__':
 
     print(deep_sizeof(np.array(range(10))))
     print(deep_sizeof(np.array(range(1000))))
+
+    import pandas as pd
+
+    print(deep_sizeof(pd.DataFrame([[1, 2, 3], [4, 5, 6]])))

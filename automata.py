@@ -15,6 +15,7 @@ from typing import Tuple
 
 # defined types
 from find_replace_trie import Trie
+from tmp import deep_sizeof
 
 State = Tuple[int, int]  # tuple of (position, distance)
 DFAState = FrozenSet[State]  # a set of all NFA states reachable with the same input
@@ -343,23 +344,27 @@ class BKNode(object):
 
 
 if __name__ == '__main__':
-    from matplotlib import pyplot as plt
 
+    t = time.time()
     # words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
     words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
     print(len(words), 'total words sorted and loaded')
+    print('seconds:', time.time() - t)
+    print('size:', deep_sizeof(words))
 
-    # print('loading bk tree')
-    # t = time.time()
-    # bkn = BKNode('banana')
-    # for w in sorted(words):
-    #     bkn.insert(w)
-    # print('seconds:', time.time() - t)
+    print('loading bk tree')
+    t = time.time()
+    bkn = BKNode('banana')
+    for w in sorted(words):
+        bkn.insert(w)
+    print('seconds:', time.time() - t)
+    print('size:', deep_sizeof(bkn))
 
     print('loading trie')
     t = time.time()
     trie = Trie.fromkeys(words)
     print('seconds:', time.time() - t)
+    print('size:', deep_sizeof(trie))
 
     query_str = 'asalamalaikum'
     # query_str = 'zz'  # previous edge case for trie
@@ -386,11 +391,11 @@ if __name__ == '__main__':
         fs.append(len(found))
         print('found:', len(found), found[:25])
 
-        # print('bk tree')
-        # t = time.time()
-        # print('probes:', bkn.search(query_str, k=x))
-        # print('seconds:', time.time() - t)
-        # print(len(set(bkn.results)), sorted(set(bkn.results))[:25])
+        print('bk tree')
+        t = time.time()
+        print('probes:', bkn.search(query_str, k=x))
+        print('seconds:', time.time() - t)
+        print(len(set(bkn.results)), sorted(set(bkn.results))[:25])
 
         print('trie')
         t = time.time()
@@ -398,11 +403,11 @@ if __name__ == '__main__':
         print('seconds:', time.time() - t)
         print(len(res), sorted(res)[:25])
 
-        # print(f'check all')
-        # t = time.time()
-        # results = [w for w in words if levenshtein(w, query_str) <= x]
-        # print('seconds:', time.time() - t)
-        # print(len(results), sorted(results)[:25])
+        print(f'check all')
+        t = time.time()
+        results = [w for w in words if levenshtein(w, query_str) <= x]
+        print('seconds:', time.time() - t)
+        print(len(results), sorted(results)[:25])
 
     plt.twinx().plot(xs, ts, '-r', label='time')
     plt.twinx().plot(xs, ps, '-g', label='probes')

@@ -41,6 +41,11 @@ def deep_sizeof(obj):
         # count size of item
         sizes[item_id] = sys.getsizeof(item)
 
+        # special case for numpy objects
+        if hasattr(item, 'nbytes'):
+            sizes[item_id] = item.nbytes
+            continue
+
         # nothing to recurse into
         if isinstance(item, NOT_ITERABLE):
             continue
@@ -68,17 +73,13 @@ def deep_sizeof(obj):
         # recurse into a class instance (slots can co-exist with dict)
         if hasattr(item, '__slots__'):
             for attr in item.__slots__:
-                if hasattr(item, attr):
-                    add_to_stack(getattr(item, attr))
+                add_to_stack(getattr(item, attr, None))
 
-        # overwrite for numpy things
-        if hasattr(item, 'nbytes'):
-            sizes[item_id] = item.nbytes
-
-        # recurse into non-numpy things
-        else:
-            for attr in dir(item):
+        # recurse into attributes (DANGER: will call a 'copy' method)
+        for attr in dir(item):
+            if not isinstance(getattr(type(item), attr, None), (property, type, Callable)):
                 if attr[:2] != '__' and attr[-2:] != '__':
+                    print(attr)
                     add_to_stack(getattr(item, attr))
 
     return sum(sizes.values())

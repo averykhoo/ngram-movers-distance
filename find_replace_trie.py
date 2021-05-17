@@ -584,8 +584,8 @@ class Trie(object):
             if keys:
                 key = keys.pop(-1)
                 _stack.append((head, keys))
-                if key is _NOTHING:
-                    continue
+                # if key is _NOTHING:
+                #     continue
 
                 assert len(_dp_table) > 0
                 next_head = head[key]

@@ -152,25 +152,32 @@ class Trie(object):
         return _trie
 
     class Node(dict):
-        # __slots__ = ('REPLACEMENT',)
+        # build time for 650656 words: 3.8s
+        # size for 650656 words: 369133837
+        # query time for 650656 words (dist=9): 8.1s
+        __slots__ = ('REPLACEMENT',)
+
+        # noinspection PyMissingConstructor
+        def __init__(self):
+            self.REPLACEMENT = _NOTHING
+
+        # # 3% smaller trie, but as much as 10% slower
+        # # build time for 650656 words: 3.2s
+        # # size for 650656 words: 357702525
+        # # query time for 650656 words (dist=9): 8.9s
+        # __slots__ = ()
         #
-        # # noinspection PyMissingConstructor
-        # def __init__(self):
-        #     self.REPLACEMENT = _NOTHING
-
-        __slots__ = ()
-
-        @property
-        def REPLACEMENT(self):
-            return self.get(_NOTHING, _NOTHING)
-
-        @REPLACEMENT.setter
-        def REPLACEMENT(self, value):
-            if value is _NOTHING:
-                if _NOTHING in self:
-                    del self[_NOTHING]
-            else:
-                self[_NOTHING] = value
+        # @property
+        # def REPLACEMENT(self):
+        #     return self.get(_NOTHING, _NOTHING)
+        #
+        # @REPLACEMENT.setter
+        # def REPLACEMENT(self, value):
+        #     if value is _NOTHING:
+        #         if _NOTHING in self:
+        #             del self[_NOTHING]
+        #     else:
+        #         self[_NOTHING] = value
 
     def __init__(self,
                  replacements: Optional[REPLACEMENTS_TYPE] = None,

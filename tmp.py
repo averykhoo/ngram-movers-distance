@@ -1,6 +1,7 @@
 import io
 import string
 import sys
+import time
 from typing import Callable
 from typing import Generator
 from typing import Mapping
@@ -100,69 +101,87 @@ class NodeC:
 if __name__ == '__main__':
 
     charset = string.printable
-    depth = 20
+    depth = 1000
 
-    n1 = NodeA()
-    head = n1
-    for _ in range(depth):
-        for char in charset:
-            head[char] = NodeA()
-            if char < 'M':
-                head[char].REPLACEMENT = char * 13
-        head = head['a']
+    t = time.time()
+    for _ in range(10):
+        n1 = NodeA()
+        head = n1
+        for _ in range(depth):
+            for char in charset:
+                head[char] = NodeA()
+                if char < 'M':
+                    head[char].REPLACEMENT = char * 13
+            head = head['a']
+    print(time.time() - t)
     print('n1', asizeof.asizeof(n1), deep_sizeof(n1))
 
     FLAG = object()
-    n2 = dict()
-    head = n2
-    for _ in range(depth):
-        for char in charset:
-            head[char] = dict()
-            if char < 'M':
-                head[char][FLAG] = char * 13
-        head = head['a']
+    t = time.time()
+    for _ in range(10):
+        n2 = dict()
+        head = n2
+        for _ in range(depth):
+            for char in charset:
+                head[char] = dict()
+                if char < 'M':
+                    head[char][FLAG] = char * 13
+            head = head['a']
+    print(time.time() - t)
     print('n2', asizeof.asizeof(n2), deep_sizeof(n2))
 
     FLAG2 = object()
-    n3 = dict()
-    head = n3
-    for _ in range(depth):
-        for char in charset:
-            head[char] = dict()
-            if char < 'M':
-                head[char][FLAG] = FLAG2
-        head = head['a']
+    t = time.time()
+    for _ in range(10):
+        n3 = dict()
+        head = n3
+        for _ in range(depth):
+            for char in charset:
+                head[char] = dict()
+                if char < 'M':
+                    head[char][FLAG] = FLAG2
+            head = head['a']
+    print(time.time() - t)
     print('n3', asizeof.asizeof(n3), deep_sizeof(n3))
 
     flag = sentinel.flag
-    n4 = dict()
-    head = n4
-    for _ in range(depth):
-        for char in charset:
-            head[char] = dict()
-            if char < 'M':
-                head[char][flag] = char * 13
-        head = head['a']
+    t = time.time()
+    for _ in range(10):
+        n4 = dict()
+        head = n4
+        for _ in range(depth):
+            for char in charset:
+                head[char] = dict()
+                if char < 'M':
+                    head[char][flag] = char * 13
+            head = head['a']
+    print(time.time() - t)
     print('n4', asizeof.asizeof(n4), deep_sizeof(n4))
 
-    n5 = NodeB()
-    head = n5
-    for _ in range(depth):
-        for char in charset:
-            head[char] = NodeB()
-            if char < 'M':
-                head[char].REPLACEMENT = char * 13
-        head = head['a']
+    t = time.time()
+    for _ in range(10):
+        n5 = NodeB()
+        head = n5
+        for _ in range(depth):
+            for char in charset:
+                head[char] = NodeB()
+                if char < 'M':
+                    head[char].REPLACEMENT = char * 13
+            head = head['a']
+    print(time.time() - t)
     print('n5', asizeof.asizeof(n5), deep_sizeof(n5))
 
-    n6 = NodeC()
-    head = n6
-    for _ in range(depth):
-        for char in charset:
-            head.DATA[char] = NodeC()
-            if char < 'M':
-                head.DATA[char].REPLACEMENT = char * 13
-        head = head.DATA['a']
+    t = time.time()
+    for _ in range(10):
+        n6 = NodeC()
+        head = n6
+        for _ in range(depth):
+            for char in charset:
+                head.DATA[char] = NodeC()
+                if char < 'M':
+                    head.DATA[char].REPLACEMENT = char * 13
+            head = head.DATA['a']
+    print(time.time() - t)
     print('n6', asizeof.asizeof(n6), deep_sizeof(n6))
 
-    print([(n, getattr(n1, n)) for n in dir(n1)])
+    # print([(n, getattr(n1, n)) for n in dir(n1)])

@@ -666,6 +666,7 @@ class Trie(object):
         _stack = [(self.root, list(self.root.keys()))]
         _word = tuple(enumerate(word))
         _template = [0] * (len(word) + 1)
+        # _out = []
 
         # noinspection PyShadowingNames
         def _damerau_levenshtein_iter(key):
@@ -706,7 +707,8 @@ class Trie(object):
                     _path.append(key)
                     _dp_table.append(next_row)
                     _stack.append((next_head, list(next_head.keys())))
-                    if next_row[-2] <= distance and next_head.REPLACEMENT is not _NOTHING:
+                    if next_row[-2] <= distance and next_head.REPLACEMENT is not _NOTHING:  # order doesn't change speed
+                        # _out.append(self.detokenizer(_path))
                         yield self.detokenizer(_path)  # , next_head.REPLACEMENT
 
             elif _path:
@@ -718,6 +720,8 @@ class Trie(object):
                 assert len(_dp_table) == 1
                 assert len(_stack) == 1
                 _stack.clear()
+
+        # return _out
 
     def _yield_tokens(self,
                       file_path: Union[str, os.PathLike],

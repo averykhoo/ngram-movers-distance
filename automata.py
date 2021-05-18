@@ -373,50 +373,56 @@ if __name__ == '__main__':
     # query_str = 'noodles'
     # query_str = 'blhoa'
 
-    xs = list(range(11))
-    ts = []  # times
-    ps = []  # probes
-    fs = []  # found
-    for x in xs:
-        print('-' * 100)
-        print('distance:', x)
+    # xs = list(range(11))
+    # ts = []  # times
+    # ps = []  # probes
+    # fs = []  # found
+    # for x in xs:
+    #     print('-' * 100)
+    #     print('distance:', x)
+    #
+    #     # print('lev automaton')
+    #     # t = time.time()
+    #     # m = Matcher(words)
+    #     # found = list(find_all_matches(query_str, x, m))
+    #     # ts.append(time.time() - t)
+    #     # print('seconds:', time.time() - t)
+    #     # ps.append(float(m.probes) / len(words))
+    #     # print('probes:', m.probes, '=', float(m.probes) / len(words))
+    #     # fs.append(len(found))
+    #     # print('found:', len(found), found[:25])
+    #
+    #     # print('bk tree')
+    #     # t = time.time()
+    #     # print('probes:', bkn.search(query_str, k=x))
+    #     # print('seconds:', time.time() - t)
+    #     # print(len(set(bkn.results)), sorted(set(bkn.results))[:25])
+    #
+    #     print('trie')
+    #     t = time.time()
+    #     res = list(trie.levenshtein_lookup(query_str, x))
+    #     print('seconds:', time.time() - t)
+    #     print(len(res), sorted(res)[:25])
+    #
+    #     print('trie 2')
+    #     t = time.time()
+    #     res = list(trie.damerau_levenshtein_lookup(query_str, x))
+    #     print('seconds:', time.time() - t)
+    #     print(len(res), sorted(res)[:25])
+    #
+    #     # print(f'check all')
+    #     # t = time.time()
+    #     # results = [w for w in words if levenshtein(w, query_str) <= x]
+    #     # print('seconds:', time.time() - t)
+    #     # print(len(results), sorted(results)[:25])
+    #
+    # # plt.twinx().plot(xs, ts, '-r', label='time')
+    # # plt.twinx().plot(xs, ps, '-g', label='probes')
+    # # plt.twinx().plot(xs, fs, '-b', label='found')
+    # # plt.show()
 
-        # print('lev automaton')
-        # t = time.time()
-        # m = Matcher(words)
-        # found = list(find_all_matches(query_str, x, m))
-        # ts.append(time.time() - t)
-        # print('seconds:', time.time() - t)
-        # ps.append(float(m.probes) / len(words))
-        # print('probes:', m.probes, '=', float(m.probes) / len(words))
-        # fs.append(len(found))
-        # print('found:', len(found), found[:25])
-
-        # print('bk tree')
-        # t = time.time()
-        # print('probes:', bkn.search(query_str, k=x))
-        # print('seconds:', time.time() - t)
-        # print(len(set(bkn.results)), sorted(set(bkn.results))[:25])
-
-        print('trie')
-        t = time.time()
-        res = list(trie.levenshtein_lookup(query_str, x))
-        print('seconds:', time.time() - t)
-        print(len(res), sorted(res)[:25])
-
-        print('trie 2')
-        t = time.time()
-        res = list(trie.damerau_levenshtein_lookup(query_str, x))
-        print('seconds:', time.time() - t)
-        print(len(res), sorted(res)[:25])
-
-        # print(f'check all')
-        # t = time.time()
-        # results = [w for w in words if levenshtein(w, query_str) <= x]
-        # print('seconds:', time.time() - t)
-        # print(len(results), sorted(results)[:25])
-
-    # plt.twinx().plot(xs, ts, '-r', label='time')
-    # plt.twinx().plot(xs, ps, '-g', label='probes')
-    # plt.twinx().plot(xs, fs, '-b', label='found')
-    # plt.show()
+    for i, word in enumerate(words[:650000:500]):
+        if i % 10 == 0:
+            print(i, word)
+        _ = list(trie.levenshtein_lookup(word, 1))
+        _ = list(trie.damerau_levenshtein_lookup(word, 1))

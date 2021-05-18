@@ -580,16 +580,15 @@ class Trie(object):
 
         _path = []
         _dp_table = [[d * deletion_cost for d in range(len(word) + 1)]]
-        _stack = [(self.root, sorted(self.root.keys(), reverse=True))]
+        _stack = [(self.root, list(self.root.keys()))]
         _word = tuple(enumerate(word))
 
         while _stack:
-            head, keys = _stack.pop(-1)
+            head, keys = _stack[-1]
             if keys:
                 key = keys.pop(-1)
-                _stack.append((head, keys))
+                # _stack.append((head, keys))
 
-                assert len(_dp_table) > 0
                 next_head = head[key]
                 next_row = [len(_dp_table) * insertion_cost]
 
@@ -623,6 +622,10 @@ class Trie(object):
             elif _path:
                 _path.pop(-1)
                 _dp_table.pop(-1)
+                _stack.pop(-1)
+
+            elif _stack:
+                _stack.pop(-1)
 
             else:
                 assert not _stack
@@ -653,17 +656,17 @@ class Trie(object):
 
         _path = []
         _dp_table = [[d * deletion_cost for d in range(1, len(word) + 1)] + [0]]
-        _stack = [(self.root, sorted(self.root.keys(), reverse=True))]
+        _stack = [(self.root, list(self.root.keys()))]
         _word = tuple(enumerate(word))
         _template = [0] * (len(word) + 1)
 
         while _stack:
-            head, keys = _stack.pop(-1)
+            # head, keys = _stack.pop(-1)
+            head, keys = _stack[-1]
             if keys:
                 key = keys.pop(-1)
-                _stack.append((head, keys))
+                # _stack.append((head, keys))
 
-                assert len(_dp_table) > 0
                 next_head = head[key]
                 next_row = _template[:]
                 next_row[-1] = _dp_table[-1][-1] + insertion_cost  # hack to make -1 an index
@@ -700,6 +703,10 @@ class Trie(object):
             elif _path:
                 _path.pop(-1)
                 _dp_table.pop(-1)
+                _stack.pop(-1)
+
+            elif _stack:
+                _stack.pop(-1)
 
             else:
                 assert not _stack

@@ -559,7 +559,7 @@ class Trie(object):
                            insertion_cost: Union[int, float] = 1,
                            deletion_cost: Union[int, float] = 1,
                            substitution_cost: Union[int, float] = 1,
-                           transposition_cost: Union[int, float] = 1,
+                           transposition_cost: Union[int, float] = 2,
                            ) -> Generator[str, Any, None]:
         """
         levenshtein / edit distance based approximate string lookup
@@ -576,40 +576,49 @@ class Trie(object):
         assert insertion_cost >= 0
         assert deletion_cost >= 0
         assert substitution_cost >= 0
-        assert transposition_cost >= 0
+        # assert transposition_cost >= 0
 
         _path = []
         _dp_table = [[d * deletion_cost for d in range(len(word) + 1)]]
         _stack = [(self.root, list(self.root.keys()))]
         _word = tuple(enumerate(word))
+        _template = [0] * (len(word) + 1)
+
+        # noinspection PyShadowingNames
+        def _levenshtein_iter(key):
+            nonlocal _path
+            nonlocal _word
+            nonlocal word
+            nonlocal _dp_table
+
+            next_row = _template[:]
+            next_row[0] = len(_dp_table) * insertion_cost
+
+            for idx_2, char_2 in _word:
+                # [idx_2 + 1] instead of j since _dp_table[-1] and current_row are one character longer than word
+                if key == char_2:
+                    next_row[idx_2 + 1] = _dp_table[-1][idx_2]
+                else:
+                    insertions = _dp_table[-1][idx_2 + 1] + insertion_cost
+                    deletions = next_row[idx_2] + deletion_cost
+                    substitutions = _dp_table[-1][idx_2] + substitution_cost
+                    # next_row[idx_2 + 1] = min(insertions, deletions, substitutions)
+
+                    # character transposition
+                    if _path and idx_2 and key == word[idx_2 - 1] and _path[-1] == char_2:
+                        transpositions = _dp_table[-2][idx_2 - 1] + transposition_cost
+                        next_row[idx_2 + 1] = min(insertions, deletions, substitutions, transpositions)
+                    else:
+                        next_row[idx_2 + 1] = min(insertions, deletions, substitutions)
+            return next_row
 
         while _stack:
             head, keys = _stack[-1]
             if keys:
                 key = keys.pop(-1)
-                # _stack.append((head, keys))
 
                 next_head = head[key]
-                next_row = [len(_dp_table) * insertion_cost]
-
-                for idx_2, char_2 in _word:
-                    # [idx_2 + 1] instead of j since _dp_table[-1] and current_row are one character longer than word
-                    if key == char_2:
-                        # substitutions = _dp_table[-1][idx_2]
-                        # next_row.append(min(insertions, deletions, substitutions))
-                        next_row.append(_dp_table[-1][idx_2])
-                    else:
-                        insertions = _dp_table[-1][idx_2 + 1] + insertion_cost
-                        deletions = next_row[idx_2] + deletion_cost
-                        substitutions = _dp_table[-1][idx_2] + substitution_cost
-                        # next_row.append(min(insertions, deletions, substitutions))
-
-                        # character transposition
-                        if _path and idx_2 and key == word[idx_2 - 1] and _path[-1] == char_2:
-                            transpositions = _dp_table[-2][idx_2 - 1] + transposition_cost
-                            next_row.append(min(insertions, deletions, substitutions, transpositions))
-                        else:
-                            next_row.append(min(insertions, deletions, substitutions))
+                next_row = _levenshtein_iter(key)
 
                 # early exit?
                 if min(next_row) <= distance:
@@ -624,12 +633,10 @@ class Trie(object):
                 _dp_table.pop(-1)
                 _stack.pop(-1)
 
-            elif _stack:
-                _stack.pop(-1)
-
             else:
-                assert not _stack
                 assert len(_dp_table) == 1
+                assert len(_stack) == 1
+                _stack.clear()
 
     def damerau_levenshtein_lookup(self,
                                    word: str,
@@ -637,7 +644,7 @@ class Trie(object):
                                    insertion_cost: Union[int, float] = 1,
                                    deletion_cost: Union[int, float] = 1,
                                    substitution_cost: Union[int, float] = 1,
-                                   transposition_cost: Union[int, float] = 1,
+                                   transposition_cost: Union[int, float] = 2,
                                    ) -> Generator[str, Any, None]:
         """
         damerau levenshtein (ie. with transpose) based approximate string lookup
@@ -660,37 +667,39 @@ class Trie(object):
         _word = tuple(enumerate(word))
         _template = [0] * (len(word) + 1)
 
+        # noinspection PyShadowingNames
+        def _damerau_levenshtein_iter(key):
+            nonlocal _path
+            nonlocal _word
+            nonlocal word
+            nonlocal _dp_table
+
+            next_row = _template[:]  # faster than _template.copy()
+            next_row[-1] = _dp_table[-1][-1] + insertion_cost  # hack to make -1 an index
+            for idx_2, char_2 in _word:
+                if key == char_2:
+                    next_row[idx_2] = _dp_table[-1][idx_2 - 1]
+                else:
+                    insertions = _dp_table[-1][idx_2] + insertion_cost
+                    deletions = next_row[idx_2 - 1] + deletion_cost
+                    substitutions = _dp_table[-1][idx_2 - 1] + substitution_cost
+                    # next_row[idx_2] = min(insertions, deletions, substitutions)
+
+                    # character transposition
+                    if _path and idx_2 and key == word[idx_2 - 1] and _path[-1] == char_2:
+                        transpositions = _dp_table[-2][idx_2 - 2] + transposition_cost
+                        next_row[idx_2] = min(insertions, deletions, substitutions, transpositions)
+                    else:
+                        next_row[idx_2] = min(insertions, deletions, substitutions)
+            return next_row
+
         while _stack:
-            # head, keys = _stack.pop(-1)
             head, keys = _stack[-1]
             if keys:
                 key = keys.pop(-1)
-                # _stack.append((head, keys))
 
                 next_head = head[key]
-                next_row = _template[:]
-                next_row[-1] = _dp_table[-1][-1] + insertion_cost  # hack to make -1 an index
-
-                for idx_2, char_2 in _word:
-                    if key == char_2:
-                        # substitutions = _dp_table[-1][idx_2 - 1]
-                        # assert substitutions <= insertions
-                        # assert substitutions <= deletions
-                        # next_row[idx_2] = substitutions
-                        next_row[idx_2] = _dp_table[-1][idx_2 - 1]
-                    else:
-                        insertions = _dp_table[-1][idx_2] + insertion_cost
-                        deletions = next_row[idx_2 - 1] + deletion_cost
-                        substitutions = _dp_table[-1][idx_2 - 1] + substitution_cost
-                        # next_row[idx_2] = min(insertions, deletions, substitutions)
-
-                        # character transposition
-                        if _path and idx_2 and key == word[idx_2 - 1] and _path[-1] == char_2:
-                            # next_row[idx_2] = min(next_row[idx_2], _dp_table[-2][idx_2 - 2] + transposition_cost)
-                            transpositions = _dp_table[-2][idx_2 - 2] + transposition_cost
-                            next_row[idx_2] = min(insertions, deletions, substitutions, transpositions)
-                        else:
-                            next_row[idx_2] = min(insertions, deletions, substitutions)
+                next_row = _damerau_levenshtein_iter(key)
 
                 # early exit?
                 if min(next_row) <= distance:
@@ -705,12 +714,10 @@ class Trie(object):
                 _dp_table.pop(-1)
                 _stack.pop(-1)
 
-            elif _stack:
-                _stack.pop(-1)
-
             else:
-                assert not _stack
                 assert len(_dp_table) == 1
+                assert len(_stack) == 1
+                _stack.clear()
 
     def _yield_tokens(self,
                       file_path: Union[str, os.PathLike],

@@ -228,6 +228,13 @@ class Trie(object):
         if replacements is not None:
             self.update(replacements)
 
+    @property
+    def nbytes(self) -> int:
+        raise NotImplementedError  # todo
+
+    def _sort_keys(self, ascending=True):
+        raise NotImplementedError  # todo
+
     def __contains__(self, key: AnyStr) -> bool:
         head = self.root
         for token in self.tokenizer(key):

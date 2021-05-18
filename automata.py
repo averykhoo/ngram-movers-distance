@@ -346,8 +346,8 @@ class BKNode(object):
 if __name__ == '__main__':
 
     t = time.time()
-    words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt'))
-    # words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt'))
+    words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt', encoding='utf8'))
+    # words = sorted(line.split(',')[0].strip().lower() for line in open('words_en.txt', encoding='utf8'))
     print(len(words), 'total words sorted and loaded')
     print('seconds:', time.time() - t)
     print('size:', deep_sizeof(words))

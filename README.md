@@ -1,6 +1,19 @@
 #   N-gram Mover's Distance
 a string similarity measure based on Earth Mover's Distance
 
+##  Why another string matching algorithm?
+*   Edit distance really wasn't cutting it when I needed to lookup a dictionary for a misspelled word
+    *   When distance >1, the results are not very useful
+    *   When distance >5, the results are meaningless
+    *   Same goes for Damerau-Levenshtein
+*   Also, edit distance was a bit slow when looking up a large dictionary
+    *   Even with a decent automaton or trie implementation
+    *   NMD was designed with indexing in mind
+    *   A simpler index could be used for Jaccard or cosine similarity over ngrams
+        *   todo: try [this paper's algo](https://www.aclweb.org/anthology/C10-1096.pdf)
+        *   which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
+    *   also todo: try matching automaton against a trie
+
 #   Usage
 
 ##  `nmd.py`

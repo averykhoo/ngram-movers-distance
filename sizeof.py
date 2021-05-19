@@ -38,14 +38,14 @@ def deep_sizeof(obj):
         if item_id in sizes:
             continue
 
+        # special case for numpy objects
+        size = getattr(item, 'nbytes', None)
+        if isinstance(size, Number):
+            sizes[item_id] = size
+            continue
+
         # count size of item
         sizes[item_id] = sys.getsizeof(item)
-
-        # special case for numpy objects
-        if hasattr(item, 'nbytes'):
-            if isinstance(item.nbytes, Number):
-                sizes[item_id] = item.nbytes
-                continue
 
         # nothing to recurse into
         if isinstance(item, NOT_ITERABLE):
@@ -65,16 +65,16 @@ def deep_sizeof(obj):
                 add_to_stack(key)
 
         # recurse into a class instance
-        if hasattr(item, '__dict__'):
-            for key in item.__dict__.keys():
-                add_to_stack(key)
-            for value in item.__dict__.values():
-                add_to_stack(value)
+        _dict = getattr(item, '__dict__', dict())
+        for key in _dict.keys():
+            add_to_stack(key)
+        for value in _dict.values():
+            add_to_stack(value)
 
         # recurse into a class instance (slots can co-exist with dict)
-        if hasattr(item, '__slots__'):
-            for attr in item.__slots__:
-                add_to_stack(getattr(item, attr, None))
+        _slots = getattr(item, '__slots__', ())
+        for attr in _slots:
+            add_to_stack(getattr(item, attr, None))
 
         # recurse into attributes (DANGER: still calls np.array().T recursively forever)
         for attr in dir(item):

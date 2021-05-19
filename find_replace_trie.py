@@ -11,6 +11,7 @@ import math
 import os
 import random
 import re
+import sys
 import time
 from typing import Any
 from typing import AnyStr
@@ -230,7 +231,28 @@ class Trie(object):
 
     @property
     def nbytes(self) -> int:
-        raise NotImplementedError  # todo
+        """
+        size of this Trie in bytes
+        similar to numpy.array([]).nbytes
+        """
+        total_bytes = 0
+        seen_ids = set()
+
+        for obj in (self, self.length, self.tokenizer, self.detokenizer):
+            assert id(obj) not in seen_ids
+            total_bytes += sys.getsizeof(obj)
+            seen_ids.add(id(obj))
+
+        stack = [self.root]
+        while stack:
+            node = stack.pop()
+            stack.extend(node.values())
+            for obj in (node, node.REPLACEMENT, *node.keys()):
+                if id(obj) not in seen_ids:
+                    total_bytes += sys.getsizeof(obj)
+                    seen_ids.add(id(obj))
+
+        return total_bytes
 
     def _sort_keys(self, ascending=True):
         raise NotImplementedError  # todo
@@ -673,6 +695,7 @@ class Trie(object):
         _stack = [(self.root, list(self.root.keys()))]
         _word = tuple(enumerate(word))
         _template = [0] * (len(word) + 1)
+
         # _out = []
 
         # noinspection PyShadowingNames

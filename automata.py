@@ -15,7 +15,7 @@ from typing import Tuple
 
 # defined types
 from find_replace_trie import Trie
-from tmp import deep_sizeof
+from sizeof import deep_sizeof
 
 State = Tuple[int, int]  # tuple of (position, distance)
 DFAState = FrozenSet[State]  # a set of all NFA states reachable with the same input
@@ -364,7 +364,7 @@ if __name__ == '__main__':
     t = time.time()
     trie = Trie.fromkeys(words)
     print('seconds:', time.time() - t)
-    # print('size:', deep_sizeof(trie))
+    print('size:', trie.nbytes)
 
     query_str = 'asalamalaikum'
     # query_str = 'zz'  # previous edge case for trie

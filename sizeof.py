@@ -44,11 +44,11 @@ def deep_sizeof(obj):
             sizes[item_id] = size
             continue
 
-        # special cases for pandas dataframe and series
+        # special cases for pandas objects
         if isinstance(item, pd.DataFrame):
             sizes[item_id] = item.memory_usage(index=True, deep=True).sum()
             continue
-        if isinstance(item, pd.Series):
+        if isinstance(item, (pd.Series, pd.Index)):
             sizes[item_id] = item.memory_usage(index=True, deep=True)
             continue
 

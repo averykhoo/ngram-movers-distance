@@ -40,9 +40,18 @@ def deep_sizeof(obj):
 
         # special case for numpy objects
         size = getattr(item, 'nbytes', None)
-        if isinstance(size, Number):
+        if isinstance(size, int):
             sizes[item_id] = size
             continue
+
+        # special case for pandas dataframe and series
+        if hasattr(item, 'memory_usage'):
+            size = item.memory_usage(index=True, deep=True)
+            if hasattr(size, 'sum'):
+                size = size.sum()  # dataframes return a series which we need to sum
+            if isinstance(size, int):
+                sizes[item_id] = size
+                continue
 
         # count size of item
         sizes[item_id] = sys.getsizeof(item)

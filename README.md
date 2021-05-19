@@ -1,5 +1,4 @@
 #   N-gram Mover's Distance
-
 a string similarity measure based on Earth Mover's Distance
 
 #   Usage
@@ -39,11 +38,24 @@ print(word_list.lookup(f'asalamalaikum'))  # -> 'assalamualaikum'
 print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 ```
 
+##  `nmd_bow.py`
+```python
+from nmd_bow import bow_ngram_movers_distance
+from tokenizer import unicode_tokenize
+
+text_1 = f'Clementi Sports Hub'
+text_2 = f'sport hubs clemeti'
+print(bow_ngram_movers_distance(bag_of_words_1=unicode_tokenize(text_1.casefold(), words_only=True),
+                                bag_of_words_2=unicode_tokenize(text_2.casefold(), words_only=True),
+                                invert=True,  # invert: return similarity instead of distance
+                                ))
+```
+
 #   todo
 *   real_quick_ratio, or maybe calculate length bounds?
     *   needs a cutoff to actually speed up though, makes a huge difference for difflib
     *   a sufficiently low cutoff is not unreasonable, although the default of 0.6 might be a little high for nmd
-    *   that said the builtin diff performs pretty badly at low similarities, so 0.6 is reasonable for them 
+    *   that said the builtin diff performs pretty badly at low similarities, so 0.6 is reasonable for them
 ```python
 def real_quick_ratio(self):
     """Return an upper bound on ratio() very quickly.

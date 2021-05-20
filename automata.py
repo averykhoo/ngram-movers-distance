@@ -316,31 +316,31 @@ def levenshtein(s1, s2):
 
 
 class BKNode(object):
-    def __init__(self, term):
-        self.term = term
-        self.children = dict()
-        self.results = []
+    def __init__(self, term: str):
+        self.term: str = term
+        self.children: Dict[int, BKNode] = dict()
 
-    def insert(self, other):
+    def insert(self, other: str):
         distance = levenshtein(self.term, other)
         if distance in self.children:
             self.children[distance].insert(other)
         else:
             self.children[distance] = BKNode(other)
 
-    def search(self, term, k, _output=None):
-        if _output is None:
-            _output = []  # todo: wrap this function and use a nonlocal inner function
+    def _search(self, term: str, k: int, output_set: set):
         distance = levenshtein(self.term, term)
         counter = 1
         if distance <= k:
-            _output.append(self.term)
+            output_set.add(self.term)
         for _dist in range(max(0, distance - k), distance + k + 1):
-            # child = self.children.get(_dist)
             if _dist in self.children:
-                counter += self.children[_dist].search(term, k, _output)
-        self.results = _output
+                counter += self.children[_dist]._search(term, k, output_set)
         return counter
+
+    def search(self, term: str, k: int):
+        output_set = set()
+        self._search(term, k, output_set)
+        return output_set
 
 
 if __name__ == '__main__':
@@ -394,9 +394,10 @@ if __name__ == '__main__':
     #
     #     # print('bk tree')
     #     # t = time.time()
-    #     # print('probes:', bkn.search(query_str, k=x))
+    #     # res = set()
+    #     # print('probes:', bkn._search(query_str, x, res))
     #     # print('seconds:', time.time() - t)
-    #     # print(len(set(bkn.results)), sorted(set(bkn.results))[:25])
+    #     # print(len(res), sorted(res)[:25])
     #
     #     print('trie')
     #     t = time.time()

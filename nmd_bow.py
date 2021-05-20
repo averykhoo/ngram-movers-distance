@@ -11,6 +11,7 @@ def bow_ngram_movers_distance(bag_of_words_1: Union[str, Iterable[str]],
                               bag_of_words_2: Union[str, Iterable[str]],
                               n: int = 2,
                               invert: bool = False,
+                              normalize: bool = False,
                               ) -> float:
     """
     calculates the n-gram mover's distance between two bags of words (for some specified n)
@@ -20,6 +21,7 @@ def bow_ngram_movers_distance(bag_of_words_1: Union[str, Iterable[str]],
     :param bag_of_words_2: another list of strings
     :param n: number of chars per n-gram (default 2)
     :param invert: return similarity instead of distance
+    :param normalize: normalize to a score from 0 to 1 (inclusive of 0 and 1)
     :return: n-gram mover's distance, possibly inverted and/or normalized
     """
 
@@ -51,6 +53,9 @@ def bow_ngram_movers_distance(bag_of_words_1: Union[str, Iterable[str]],
         out = abs(len(bag_of_words_1) - len(bag_of_words_2))
         for row_idx, col_idx in zip(row_idxs, col_idxs):
             out += costs[row_idx][col_idx]
+
+    if normalize:
+        out /= max(len(bag_of_words_1), len(bag_of_words_2))
 
     return out
 

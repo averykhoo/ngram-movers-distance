@@ -146,26 +146,27 @@ class Trie(object):
     def fromkeys(keys: Iterable[str],
                  default: str = '',
                  case_sensitive: bool = True,
+                 sort: bool = False,
                  verbose: bool = False,
                  ) -> 'Trie':
         _trie = Trie(lowercase=not case_sensitive)
         _trie.update(((key, default) for key in keys), verbose=verbose)
+        if sort:
+            _trie.sort_keys()
         return _trie
 
     class Node(dict):
-        # build time for 650656 words: 3.8s
-        # size for 650656 words: 369133837
-        # query time for 650656 words (dist=9): 8.1s
         __slots__ = ('REPLACEMENT',)
 
         # noinspection PyMissingConstructor
         def __init__(self):
+            # todo: rename "REPLACEMENT" to something better, like "value"
+            # todo: rename "_NOTHING" to something better, like "NULL" or "UNDEFINED" or "NotAvailable"
             self.REPLACEMENT = _NOTHING
 
-        # # 3% smaller trie, but as much as 10% slower
-        # # build time for 650656 words: 3.2s
-        # # size for 650656 words: 357702525
-        # # query time for 650656 words (dist=9): 8.9s
+        # # trie size is 3% smaller
+        # # trie building is 15% faster
+        # # trie querying is 10% slower <- not worth it
         # __slots__ = ()
         #
         # @property
@@ -254,8 +255,30 @@ class Trie(object):
 
         return total_bytes
 
-    def _sort_keys(self, ascending=True):
-        raise NotImplementedError  # todo
+    def sort_keys(self, ascending=True, case_sensitive=True):
+        """
+        lexicographically sort keys in the trie
+        ascending=True -> returns a-z
+        ascending=False -> returns z-a
+
+        unsorted trie output does not follow input order
+        and it can't anyway, unless I store a list of some kind, which I won't
+        """
+        if case_sensitive:
+            def compare(token) -> Tuple[str, str]:
+                return token.casefold(), token  # actually semi case sensitive, because that makes more sense
+        else:
+            def compare(token) -> str:
+                return token
+
+        stack = [self.root]
+        while stack:
+            node = stack.pop()
+            node_copy = node.copy()
+            node.clear()
+            for key in sorted(node_copy.keys(), reverse=ascending, key=compare):
+                node[key] = node_copy[key]
+                stack.append(node_copy[key])
 
     def __contains__(self, key: AnyStr) -> bool:
         head = self.root
@@ -369,7 +392,7 @@ class Trie(object):
     def items(self):
         # todo: special case for empty str?
         _path = []
-        _stack = [(self.root, sorted(self.root.keys(), reverse=True))]
+        _stack = [(self.root, list(self.root.keys()))]
         while _stack:
             head, keys = _stack.pop(-1)
             if keys:
@@ -379,7 +402,7 @@ class Trie(object):
                 _path.append(key)
                 if head.REPLACEMENT is not _NOTHING:
                     yield self.detokenizer(_path), head.REPLACEMENT
-                _stack.append((head, sorted(head.keys(), reverse=True)))
+                _stack.append((head, list(head.keys())))
             elif _path:
                 _path.pop(-1)
             else:
@@ -405,7 +428,7 @@ class Trie(object):
         assert list(self.tokenizer('test-test test')) == list('test-test test'), "shouldn't use a tokenizer"
 
         _parts = [[], []]
-        _stack = [(self.root, sorted(self.root.keys(), reverse=True))]
+        _stack = [(self.root, list(self.root.keys()))]
         while _stack:
             head, keys = _stack.pop(-1)
             if keys:
@@ -445,7 +468,7 @@ class Trie(object):
                 _parts[-1].append(key)
 
                 # one level down
-                _stack.append((head, sorted(head.keys(), reverse=True)))
+                _stack.append((head, list(head.keys())))
                 _parts.append([])
 
             else:

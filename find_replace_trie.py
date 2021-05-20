@@ -37,14 +37,13 @@ class Match:
         match result (similar to re.Match, but currently using token indices because of how tokenization works)
         todo: normalize to char index
         todo: use a frozen dataclass
-        todo: just refer to original string once we have the char indices, for compat
 
         :param start: index of start TOKEN (not char)
         :param end: index after end token
         :param match: string matched
         """
         self.__regs = ((start, end),)  # mimic the re.Match object
-        self.__str = match  # re.Match stores a reference to the ENTIRE ORIGINAL STRING, let's not do that
+        self.__str = match  # re.Match references the original string to save space, but we might match a char iterator
 
     @property
     def regs(self) -> Tuple[Tuple[int, int]]:

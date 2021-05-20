@@ -17,6 +17,7 @@ a string similarity measure based on Earth Mover's Distance
 #   Usage
 
 ##  `nmd.py`
+string distance metric, use this to compare two strings
 ```python
 from nmd import ngram_movers_distance
 
@@ -34,6 +35,7 @@ print(ngram_movers_distance(f'hello', f'yellow', invert=True, normalize=True))
 ```
 
 ##  `nmd_index.py`
+use this for dictionary lookups of words
 ```python
 from nmd_index import ApproxWordList5
 
@@ -52,19 +54,22 @@ print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 ```
 
 ##  `nmd_bow.py`
+use this to compare sequences of tokens (not necessarily unique)
 ```python
 from nmd_bow import bow_ngram_movers_distance
 from tokenizer import unicode_tokenize
 
 text_1 = f'Clementi Sports Hub'
-text_2 = f'sport hubs clemeti'
+text_2 = f'sport hubs clemmeti'
 print(bow_ngram_movers_distance(bag_of_words_1=unicode_tokenize(text_1.casefold(), words_only=True),
                                 bag_of_words_2=unicode_tokenize(text_2.casefold(), words_only=True),
                                 invert=True,  # invert: return similarity instead of distance
+                                normalize=True,  # return a score between 0 and 1
                                 ))
 ```
 
 #   todo
+*   rename nmd_bow because it isn't really a bow, it's a token sequence
 *   real_quick_ratio, or maybe calculate length bounds?
     *   needs a cutoff to actually speed up though, makes a huge difference for difflib
     *   a sufficiently low cutoff is not unreasonable, although the default of 0.6 might be a little high for nmd

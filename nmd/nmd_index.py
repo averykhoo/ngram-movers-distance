@@ -10,12 +10,10 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
-from automata import Matcher
-from automata import find_all_matches
 from levenshtein import damerau_levenshtein_distance
 from levenshtein import edit_distance
-from nmd import _emd_1d_fast as emd_1d
-from nmd import ngram_movers_distance
+from nmd.nmd import emd_1d as emd_1d
+from nmd.nmd import ngram_movers_distance
 
 
 @lru_cache(maxsize=0xFFFF)
@@ -179,14 +177,13 @@ class ApproxWordList3:
             top_k = len(counter)
 
         # also return edit distances for debugging
-        out = [(self.__vocabulary[word_index], round(match_score, 3),
+        out = [(self.__vocabulary[word_index],
+                match_score,
                 damerau_levenshtein_distance(word, self.__vocabulary[word_index]),
                 edit_distance(word, self.__vocabulary[word_index]),
                 ngram_movers_distance(word, self.__vocabulary[word_index], invert=True, normalize=True),
                 )
-               for word_index, match_score in counter.most_common(top_k * 2)
-               if (match_score >= top_score * 0.9)
-               or damerau_levenshtein_distance(word, self.__vocabulary[word_index]) <= 1]
+               for word_index, match_score in counter.most_common(top_k * 2)]
 
         # print(time.time() - t)
         return out[:top_k]
@@ -399,116 +396,12 @@ class ApproxWordList5:
 
         # also return edit distances for debugging
         out = [(self.__word_list[word_index],  # word
-                round(match_score if invert else 1 - match_score, 3),  # lookup result
+                match_score if invert else 1 - match_score,  # lookup result
                 damerau_levenshtein_distance(word, self.__word_list[word_index]),
                 edit_distance(word, self.__word_list[word_index]),
                 ngram_movers_distance(word, self.__word_list[word_index], invert=invert, normalize=True),
                 )
                for word_index, match_score in word_scores]
-        #      if (match_score >= word_scores[0][1] * 0.9)
-        #      or damerau_levenshtein_distance(word, self.__word_list[word_index]) <= 1]
 
         # print(time.time() - t)
         return out
-
-
-if __name__ == '__main__':
-    with open('words_ms.txt', encoding='utf8') as f:
-        words_ms = set(f.read().split())
-
-    awl3_ms = ApproxWordList3((2,))
-    for word in words_ms:
-        awl3_ms.add_word(word)
-
-    awl5_ms = ApproxWordList5((2,))
-    for word in words_ms:
-        awl5_ms.add_word(word)
-
-    with open('words_en.txt', encoding='utf8') as f:
-    # with open('british-english-insane.txt', encoding='utf8') as f:
-        words = set(f.read().split())
-
-    awl3_en = ApproxWordList3((2,))
-    for word in words:
-        awl3_en.add_word(word)
-
-    awl5_en = ApproxWordList5((2,))
-    for word in words:
-        awl5_en.add_word(word)
-
-    # bananana
-    # supercallousedfragilemisticexepialidocus
-    # asalamalaikum
-    # beewilldermant
-    # blackbary
-    # kartweel
-    # chomosrome
-    # chrisanthumem
-    # instalatiomn
-    print(awl3_ms.lookup('bananananaanananananana'))
-    print(awl5_ms.lookup('bananananaanananananana'))
-    print(awl3_en.lookup('bananananaanananananana'))
-    print(awl5_en.lookup('bananananaanananananana'))
-
-    m = Matcher(sorted(words))
-
-    while True:
-        word = input('word:\n')
-        word = word.strip()
-        if not word:
-            break
-
-        t = time.time()
-        print('awl3_ms', awl3_ms.lookup(word))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('awl5_ms', awl5_ms.lookup(word))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('difflib_ms', difflib.get_close_matches(word, words_ms, n=10))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('difflib_ms', difflib.get_close_matches(word, words_ms, n=10, cutoff=0.3))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('awl3_en', awl3_en.lookup(word))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('awl5_en', awl5_en.lookup(word))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('difflib_en', difflib.get_close_matches(word, words, n=10))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('difflib_en', difflib.get_close_matches(word, words, n=10, cutoff=0.3))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('automata dist 1 en', list(find_all_matches(word, 1, m)))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('automata dist 2 en', list(find_all_matches(word, 2, m)))
-        print(time.time() - t)
-        print()
-
-        t = time.time()
-        print('automata dist 3 en', list(find_all_matches(word, 3, m)))
-        print(time.time() - t)
-        print()

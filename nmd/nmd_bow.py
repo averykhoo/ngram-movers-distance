@@ -3,7 +3,7 @@ from typing import Union
 
 import scipy.optimize
 
-from nmd import ngram_movers_distance
+from nmd.nmd import ngram_movers_distance
 from tokenizer import unicode_tokenize
 
 

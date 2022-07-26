@@ -65,7 +65,7 @@ def ngram_movers_distance(word_1: str,
     for n_gram, locations_1 in n_gram_locations_1.items():
         if n_gram in n_gram_locations_2:
             similarity += len(locations_1) + len(n_gram_locations_2[n_gram])
-            similarity -= _emd_1d_fast(locations_1, n_gram_locations_2[n_gram])
+            similarity -= emd_1d(locations_1, n_gram_locations_2[n_gram])
 
     # return similarity or distance, optionally normalized
     output = similarity if invert else num_grams_1 + num_grams_2 - similarity
@@ -74,9 +74,31 @@ def ngram_movers_distance(word_1: str,
     return output
 
 
-def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
-                 positions_y: Sequence[Union[int, float]],
-                 ) -> float:
+def emd_1d(positions_x: Sequence[Union[int, float]],
+           positions_y: Sequence[Union[int, float]],
+           ) -> float:
+    """
+    calculates the Earth Mover's Distance between two sets of floats
+    the sets do not need to be of the same size, and either set may be empty (or both)
+
+    difference from a real emd function:
+    * restricted to one dimension only
+    * input distributions must be quantized (to points on a line), and cannot be fractional
+    * unmatched points are assigned a "distance" of 1, since for this use case the domain is from 0.0 to 1.0
+      (integers and floats greater than 1.0 are allowed, but you'll need a bit more math to make sense of the output)
+      (this tweak means the algo is a metric that obeys the triangle inequality)
+
+    thanks to these differences, the algorithm can be optimized significantly, and runs in about linear time
+
+    just found this pdf: http://infolab.stanford.edu/pub/cstr/reports/cs/tr/99/1620/CS-TR-99-1620.ch4.pdf
+    * §4.3.1 says to use a transportation simplex (TODO: look into this)
+    * §4.3.2 says zipping the lists together is correct for equal weight (equivalent to taking the area between CDFs)
+    * it doesn't really seem to talk about unequal distributions in 1d though
+
+    :param positions_x:
+    :param positions_y:
+    :return:
+    """
     # x will be the longer list
     if len(positions_x) < len(positions_y):
         positions_x, positions_y = positions_y, positions_x
@@ -91,7 +113,7 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
 
     # make a COPY of the list, sorted in reverse (descending order)
     # we'll be modifying x and y in-place later, and we don't want to accidentally edit the input
-    # also the input might be a tuple, you never know
+    # also the input might be immutable (e.g. a tuple), you never know
     positions_x = sorted(positions_x, reverse=True)
     positions_y = sorted(positions_y, reverse=True)
 
@@ -180,7 +202,7 @@ def _emd_1d_fast(positions_x: Sequence[Union[int, float]],
     distance = 0.0
 
     # merge ranges to get the sets of connected components
-    component_ranges.sort(reverse=True)
+    component_ranges.sort(reverse=True)  # should only contain 2 runs -> about linear time to sort
     last_seen = -1
     while component_ranges:
         # take the first range, then keep taking overlapping ranges

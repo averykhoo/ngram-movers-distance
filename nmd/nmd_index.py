@@ -1,5 +1,3 @@
-import difflib
-import time
 from collections import Counter
 from functools import lru_cache
 from typing import Dict
@@ -10,9 +8,7 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
-from levenshtein import damerau_levenshtein_distance
-from levenshtein import edit_distance
-from nmd.nmd import emd_1d as emd_1d
+from nmd.nmd import emd_1d
 from nmd.nmd import ngram_movers_distance
 
 
@@ -41,7 +37,7 @@ def mean(vec, dim):
     return (sum(x ** dim for x in vec) / len(vec)) ** (1 / dim)
 
 
-class ApproxWordList3:
+class ApproxWordListV3:
     def __init__(self, n: Union[int, Iterable[int]] = (2, 4), case_sensitive: bool = False):
         if isinstance(n, int):
             self.__n_list = (n,)
@@ -179,8 +175,8 @@ class ApproxWordList3:
         # also return edit distances for debugging
         out = [(self.__vocabulary[word_index],
                 match_score,
-                damerau_levenshtein_distance(word, self.__vocabulary[word_index]),
-                edit_distance(word, self.__vocabulary[word_index]),
+                # damerau_levenshtein_distance(word, self.__vocabulary[word_index]),
+                # edit_distance(word, self.__vocabulary[word_index]),
                 ngram_movers_distance(word, self.__vocabulary[word_index], invert=True, normalize=True),
                 )
                for word_index, match_score in counter.most_common(top_k * 2)]
@@ -189,7 +185,7 @@ class ApproxWordList3:
         return out[:top_k]
 
 
-class WordList:
+class ApproxWordListV5:
     def __init__(self,
                  n: Union[int, Iterable[int]] = (2, 4),
                  case_sensitive: bool = False,
@@ -397,11 +393,14 @@ class WordList:
         # also return edit distances for debugging
         out = [(self.__word_list[word_index],  # word
                 match_score if invert else 1 - match_score,  # lookup result
-                damerau_levenshtein_distance(word, self.__word_list[word_index]),
-                edit_distance(word, self.__word_list[word_index]),
+                # damerau_levenshtein_distance(word, self.__word_list[word_index]),
+                # edit_distance(word, self.__word_list[word_index]),
                 ngram_movers_distance(word, self.__word_list[word_index], invert=invert, normalize=True),
                 )
                for word_index, match_score in word_scores]
 
         # print(time.time() - t)
         return out
+
+
+WordList = ApproxWordListV5

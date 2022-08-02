@@ -7,8 +7,10 @@ from automata import Matcher
 from automata import find_all_matches
 from nmd.nmd import emd_1d as emd_1d_fast
 from nmd.nmd import ngram_movers_distance
-from nmd.nmd_index import ApproxWordList3
+from nmd.nmd_bow import bow_ngram_movers_distance
+from nmd.nmd_index import ApproxWordListV3
 from nmd.nmd_index import WordList
+from tokenizer import unicode_tokenize
 
 
 def emd_1d_slow(positions_x: Sequence[float],
@@ -217,3 +219,43 @@ if __name__ == '__main__':
         print('automata dist 3 en', list(find_all_matches(word, 3, m)))
         print(time.time() - t)
         print()
+
+
+if __name__ == '__main__':
+
+    with open('translate-reference.txt') as f:
+        ref_lines = f.readlines()
+    with open('translate-google-offline.txt') as f:
+        hyp_lines = f.readlines()
+
+    scores_bow = []
+    scores_nmd = []
+    scores_sim = []
+    for ref_line, hyp_line in zip(ref_lines, hyp_lines):
+        ref_tokens = list(unicode_tokenize(ref_line.casefold(), words_only=True, merge_apostrophe_word=True))
+        hyp_tokens = list(unicode_tokenize(hyp_line.casefold(), words_only=True, merge_apostrophe_word=True))
+        scores_bow.append(bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4) / max(len(ref_tokens), len(hyp_tokens)))
+        scores_sim.append(
+            bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4, invert=True) / max(len(ref_tokens), len(hyp_tokens)))
+        scores_nmd.append(ngram_movers_distance(' '.join(ref_tokens), ' '.join(hyp_tokens), 4, normalize=True))
+        print(' '.join(ref_tokens))
+        print(' '.join(hyp_tokens))
+        print(scores_bow[-1])
+        print(scores_sim[-1])
+        print(scores_nmd[-1])
+
+    from matplotlib import pyplot as plt
+
+    plt.scatter(scores_bow, scores_nmd, marker='.')
+    plt.show()
+    scores_diff = [a - b for a, b in zip(scores_bow, scores_nmd)]
+    tmp = sorted(zip(scores_diff, scores_bow, scores_sim, scores_nmd, ref_lines, hyp_lines))
+    print(tmp[0])
+    print(tmp[1])
+    print(tmp[2])
+    print(tmp[3])
+    print(tmp[-1])
+    print(tmp[-2])
+    print(tmp[-3])
+    print(tmp[-4])
+

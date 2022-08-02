@@ -13,8 +13,9 @@
   * Even with a decent automaton or trie implementation
   * NMD was designed with indexing in mind
   * A simpler index could be used for Jaccard or cosine similarity over ngrams
-    * todo: try [this paper's algo](https://www.aclweb.org/anthology/C10-1096.pdf)
-    * which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
+* EMD can be optimized to run really fast with some constraints
+  * Values are 1-dimensional scalars
+  * Values are always quantized
 
 # Usage
 
@@ -79,6 +80,8 @@ print(bow_ngram_movers_distance(bag_of_words_1=unicode_tokenize(text_1.casefold(
 
 # todo
 
+* todo: try [this paper's algo](https://www.aclweb.org/anthology/C10-1096.pdf)
+* which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
 * use less bizarre test strings
 * rename nmd_bow because it isn't really a bag-of-words, it's a token sequence
 * consider a `real_quick_ratio`-like optimization, or maybe calculate length bounds?

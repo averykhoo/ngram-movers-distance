@@ -39,6 +39,8 @@ def ngram_movers_distance(word_1: str,
     # add START_TEXT and END_TEXT markers to each word
     # https://en.wikipedia.org/wiki/Control_character#Transmission_control
     # the usage of these characters in any text is almost certainly a bug
+    # it is possible to avoid using these characters by using a tuple of optional strings for each n-gram
+    # but that's slightly slower and uses more memory
     word_1 = f'\2{word_1}\3'
     word_2 = f'\2{word_2}\3'
 

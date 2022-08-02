@@ -6,14 +6,14 @@
 ## Why another string matching algorithm?
 
 * Edit distance really wasn't cutting it when I needed to look up a dictionary for a misspelled word
-  * With an edit distance of 1 or 2, the results are not very useful
-  * With a distance >=5, the results are meaningless
+  * With an edit distance of 1 or 2, the results are not useful since the target word isn't found
+  * With a distance >=5, the results are meaningless since it contains half the dictionary
   * Same goes for Damerau-Levenshtein
 * Also, edit distance is pretty slow when looking up long words in a large dictionary
-  * Even with a decent automaton or trie implementation
+  * Even after building a finite state automaton or using a trie to optimize lookup
   * NMD was designed with indexing in mind
-  * A simpler index could be used for Jaccard or cosine similarity over ngrams
-* EMD can be optimized to run really fast with some constraints
+    * A simpler index could be used for Jaccard or cosine similarity over ngrams
+* EMD (and hence NMD) can be optimized to run really fast with some constraints
   * Values are 1-dimensional scalars
   * Values are always quantized
 
@@ -64,15 +64,16 @@ print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 
 * WARNING: requires `scipy.optimize`, so it's not available by default in the `nmd` namespace
 * use this to compare sequences of tokens (not necessarily unique)
+* note that this does not merge or split words, so if you're matching `["pineapple"]` and `["pine", "apple"]` the
+  similarity will be low. consider just using nmd in this case.
 
 ```python
 from nmd.nmd_bow import bow_ngram_movers_distance
-from tokenizer import unicode_tokenize
 
 text_1 = f'Clementi Sports Hub'
 text_2 = f'sport hubs clemmeti'
-print(bow_ngram_movers_distance(bag_of_words_1=unicode_tokenize(text_1.casefold(), words_only=True),
-                                bag_of_words_2=unicode_tokenize(text_2.casefold(), words_only=True),
+print(bow_ngram_movers_distance(bag_of_words_1=text_1.casefold().split(),
+                                bag_of_words_2=text_2.casefold().split(),
                                 invert=True,  # invert: return similarity instead of distance
                                 normalize=True,  # return a score between 0 and 1
                                 ))
@@ -120,13 +121,9 @@ def real_quick_ratio(self):
     * but how to get multiple results?
       * still need to run full search?
       * or maybe just return top 1 result?
-  * make the 3-gram filter optional
 * prefix lookup
   * look for all strings that are approximately prefixed
   * like existing index but not normalized and ignoring unmatched ngrams from target
-* bag of words
-  * use WMD with NMD word distances
-  * may require proper EMD implementation?
 
 ## Publishing (notes for myself)
 
@@ -136,3 +133,4 @@ def real_quick_ratio(self):
   * make sure `nmd/__init__.py` contains a docstring and version
 * publish / update
   * increment `__version__` in `nmd/__init__.py`
+  * `flit publish`

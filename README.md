@@ -1,6 +1,7 @@
 # N-gram Mover's Distance
 
-A string similarity measure based on Earth Mover's Distance
+* A string similarity measure based on Earth Mover's Distance
+* See [ngram-movers-distance](https://github.com/averykhoo/ngram-movers-distance) for code
 
 ## Why another string matching algorithm?
 

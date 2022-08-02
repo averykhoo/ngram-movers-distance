@@ -1,6 +1,6 @@
 # N-gram Mover's Distance
 
-a string similarity measure based on Earth Mover's Distance
+A string similarity measure based on Earth Mover's Distance
 
 ## Why another string matching algorithm?
 
@@ -126,8 +126,9 @@ def real_quick_ratio(self):
 
 ## Publishing (notes for myself)
 
-```shell
-pip install flit
-flit init
-flit publish
-```
+* init
+  * `pip install flit`
+  * `flit init`
+  * make sure `nmd/__init__.py` contains a docstring and version
+* publish / update
+  * increment `__version__` in `nmd/__init__.py`

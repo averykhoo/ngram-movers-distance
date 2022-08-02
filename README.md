@@ -19,7 +19,7 @@ a string similarity measure based on Earth Mover's Distance
 
 ## `ngram_movers_distance()`
 
-string distance metric, use this to compare two strings
+* string distance metric, use this to compare two strings
 
 ```python
 from nmd import ngram_movers_distance
@@ -39,7 +39,7 @@ print(ngram_movers_distance(f'hello', f'yellow', invert=True, normalize=True))
 
 ## `WordList`
 
-use this for dictionary lookups of words
+* use this for dictionary lookups of words
 
 ```python
 from nmd import WordList
@@ -60,10 +60,11 @@ print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 
 ## `bow_ngram_movers_distance()`
 
-use this to compare sequences of tokens (not necessarily unique)
+* WARNING: requires `scipy.optimize`, so it's not available by default in the `nmd` namespace
+* use this to compare sequences of tokens (not necessarily unique)
 
 ```python
-from nmd import bow_ngram_movers_distance
+from nmd.nmd_bow import bow_ngram_movers_distance
 from tokenizer import unicode_tokenize
 
 text_1 = f'Clementi Sports Hub'

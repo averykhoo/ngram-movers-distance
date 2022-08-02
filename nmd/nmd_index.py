@@ -189,7 +189,7 @@ class ApproxWordList3:
         return out[:top_k]
 
 
-class ApproxWordList5:
+class WordList:
     def __init__(self,
                  n: Union[int, Iterable[int]] = (2, 4),
                  case_sensitive: bool = False,

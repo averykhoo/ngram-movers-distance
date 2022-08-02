@@ -8,7 +8,7 @@ from automata import find_all_matches
 from nmd.nmd import emd_1d as emd_1d_fast
 from nmd.nmd import ngram_movers_distance
 from nmd.nmd_index import ApproxWordList3
-from nmd.nmd_index import ApproxWordList5
+from nmd.nmd_index import WordList
 
 
 def emd_1d_slow(positions_x: Sequence[float],
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     for word in words_ms:
         awl3_ms.add_word(word)
 
-    awl5_ms = ApproxWordList5((2,))
+    awl5_ms = WordList((2,))
     for word in words_ms:
         awl5_ms.add_word(word)
 
@@ -137,7 +137,7 @@ if __name__ == '__main__':
     for word in words:
         awl3_en.add_word(word)
 
-    awl5_en = ApproxWordList5((2,))
+    awl5_en = WordList((2,))
     for word in words:
         awl5_en.add_word(word)
 

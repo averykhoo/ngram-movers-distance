@@ -17,12 +17,12 @@ a string similarity measure based on Earth Mover's Distance
 
 # Usage
 
-## `nmd.ngram_movers_distance`
+## `ngram_movers_distance()`
 
 string distance metric, use this to compare two strings
 
 ```python
-from nmd.nmd import ngram_movers_distance
+from nmd import ngram_movers_distance
 
 # n-gram mover's distance
 print(ngram_movers_distance(f'hello', f'yellow'))
@@ -37,12 +37,12 @@ print(ngram_movers_distance(f'hello', f'yellow', normalize=True))
 print(ngram_movers_distance(f'hello', f'yellow', invert=True, normalize=True))
 ```
 
-## `nmd_index.WordList`
+## `WordList`
 
 use this for dictionary lookups of words
 
 ```python
-from nmd.nmd_index import WordList
+from nmd import WordList
 
 # get words from a text file
 with open(f'words_ms.txt', encoding=f'utf8') as f:
@@ -58,12 +58,12 @@ print(word_list.lookup(f'asalamalaikum'))  # -> 'assalamualaikum'
 print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 ```
 
-## `nmd_bow.bow_ngram_movers_distance`
+## `bow_ngram_movers_distance()`
 
 use this to compare sequences of tokens (not necessarily unique)
 
 ```python
-from nmd.nmd_bow import bow_ngram_movers_distance
+from nmd import bow_ngram_movers_distance
 from tokenizer import unicode_tokenize
 
 text_1 = f'Clementi Sports Hub'
@@ -77,6 +77,7 @@ print(bow_ngram_movers_distance(bag_of_words_1=unicode_tokenize(text_1.casefold(
 
 # todo
 
+* use less bizarre test strings
 * rename nmd_bow because it isn't really a bag-of-words, it's a token sequence
 * consider a `real_quick_ratio`-like optimization, or maybe calculate length bounds?
   * needs a cutoff to actually speed up though, makes a huge difference for difflib
@@ -127,5 +128,5 @@ def real_quick_ratio(self):
 ```shell
 pip install flit
 flit init
-
+flit publish
 ```

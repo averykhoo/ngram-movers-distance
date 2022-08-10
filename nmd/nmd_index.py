@@ -214,7 +214,7 @@ class ApproxWordListV5:
         self.__word_num_grams: List[Tuple[int]] = []  # word_index -> [num_grams(len(word), n) for n in self.__n_list]
 
         # n-gram filter: n_gram -> {word_index, ...}
-        self.__filter_n = filter_n
+        self.__filter_n: int = filter_n
         self.__ngram_filter: Dict[str, Set[int]] = dict()
 
         # n-gram counts: n_gram -> [(word_index, count), ...]
@@ -320,12 +320,9 @@ class ApproxWordListV5:
                     if self.__filter_n and other_word_index not in possible_word_indices:
                         continue
                     if other_word_index not in min_scores:
-                        min_scores[other_word_index] = [0 for _ in range(len(self.__n_list))]
+                        min_scores[other_word_index] = [0] * len(self.__n_list)
                     denominator = num_grams(len_word, n) + self.__word_num_grams[other_word_index][n_idx]
-                    if count < other_count:
-                        min_scores[other_word_index][n_idx] += count / denominator
-                    else:
-                        min_scores[other_word_index][n_idx] += other_count / denominator
+                    min_scores[other_word_index][n_idx] += min(count, other_count) / denominator
 
         # no results, return empty Counter
         if not min_scores:

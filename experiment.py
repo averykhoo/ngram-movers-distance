@@ -8,8 +8,8 @@ from automata import find_all_matches
 from nmd.nmd import emd_1d as emd_1d_fast
 from nmd.nmd import ngram_movers_distance
 from nmd.nmd_bow import bow_ngram_movers_distance
-from nmd.nmd_index import ApproxWordListV3
 from nmd.nmd_index import WordList
+from nmd.nmd_index import ApproxWordListV3
 from tokenizer import unicode_tokenize
 
 
@@ -75,59 +75,59 @@ if __name__ == '__main__':
         return ngram_movers_distance(word_1, word_2)
 
 
-    num_x = 3
-    num_y = 7
-
-    xs = [i / (num_x - 1) for i in range(num_x)]
-    ys = [i / (num_y - 1) for i in range(num_y)]
-    # print(xs)
-    # print(ys)
-    xs = xs + xs + xs
-
-    for x_len in range(len(xs) + 1):
-        for y_len in range(len(ys) + 1):
-            print(x_len, y_len)
-            for x_combi in itertools.combinations(xs, x_len):
-                for y_combi in itertools.combinations(ys, y_len):
-                    assert abs(
-                        check_correct_emd_1d(x_combi, y_combi) - check_correct_emd_1d(y_combi, x_combi)) < 0.0001, (
-                    x_combi, y_combi)
-
-    for _ in range(1000):
-        speed_test('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-                   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-        speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-        speed_test('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-        speed_test('banana', 'bababanananananananana')
-        speed_test('banana', 'bababanananananananananna')
-        speed_test('banana', 'nanananananabababa')
-        speed_test('banana', 'banana')
-        speed_test('nanananananabababa', 'banana')
-        speed_test('banana', 'bababananananananananannanananananananana')
-        speed_test('banana', 'bababananananananananannananananananananananananananannanananananananana')
-        speed_test('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana')
-
-    # test cases: https://www.watercoolertrivia.com/blog/schwarzenegger
-    with open('schwarzenegger.txt') as f:
-        for line in f:
-            print('schwarzenegger', line.strip(), speed_test(line.strip(), 'schwarzenegger'))
-
-    # real world test cases
-    with open('words_en.txt') as f1:
-        with open('words_ms.txt') as f2:
-            for en, ms in zip(f1, f2):
-                speed_test(en.strip(), ms.strip())
-                speed_test(en.strip(), en.strip())
-                speed_test(ms.strip(), ms.strip())
+    # num_x = 3
+    # num_y = 7
+    #
+    # xs = [i / (num_x - 1) for i in range(num_x)]
+    # ys = [i / (num_y - 1) for i in range(num_y)]
+    # # print(xs)
+    # # print(ys)
+    # xs = xs + xs + xs
+    #
+    # for x_len in range(len(xs) + 1):
+    #     for y_len in range(len(ys) + 1):
+    #         print(x_len, y_len)
+    #         for x_combi in itertools.combinations(xs, x_len):
+    #             for y_combi in itertools.combinations(ys, y_len):
+    #                 assert abs(
+    #                     check_correct_emd_1d(x_combi, y_combi) - check_correct_emd_1d(y_combi, x_combi)) < 0.0001, (
+    #                     x_combi, y_combi)
+    #
+    # for _ in range(1000):
+    #     speed_test('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    #                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    #     speed_test('aabbbbbbbbaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    #     speed_test('aaaabbbbbbbbaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    #     speed_test('banana', 'bababanananananananana')
+    #     speed_test('banana', 'bababanananananananananna')
+    #     speed_test('banana', 'nanananananabababa')
+    #     speed_test('banana', 'banana')
+    #     speed_test('nanananananabababa', 'banana')
+    #     speed_test('banana', 'bababananananananananannanananananananana')
+    #     speed_test('banana', 'bababananananananananannananananananananananananananannanananananananana')
+    #     speed_test('bananabababanana', 'bababananananananananannananananananananananananananannananabanananananana')
+    #
+    # # test cases: https://www.watercoolertrivia.com/blog/schwarzenegger
+    # with open('schwarzenegger.txt') as f:
+    #     for line in f:
+    #         print('schwarzenegger', line.strip(), speed_test(line.strip(), 'schwarzenegger'))
+    #
+    # # real world test cases
+    # with open('words_en.txt') as f1:
+    #     with open('words_ms.txt') as f2:
+    #         for en, ms in zip(f1, f2):
+    #             speed_test(en.strip(), ms.strip())
+    #             speed_test(en.strip(), en.strip())
+    #             speed_test(ms.strip(), ms.strip())
 
     with open('words_ms.txt', encoding='utf8') as f:
         words_ms = set(f.read().split())
 
-    awl3_ms = ApproxWordList3((2,))
+    awl3_ms = ApproxWordListV3((1,2,3,4))
     for word in words_ms:
         awl3_ms.add_word(word)
 
-    awl5_ms = WordList((2,))
+    awl5_ms = WordList((1,2,3,4))
     for word in words_ms:
         awl5_ms.add_word(word)
 
@@ -135,11 +135,11 @@ if __name__ == '__main__':
         # with open('british-english-insane.txt', encoding='utf8') as f:
         words = set(f.read().split())
 
-    awl3_en = ApproxWordList3((2,))
+    awl3_en = ApproxWordListV3((1,2,3,4))
     for word in words:
         awl3_en.add_word(word)
 
-    awl5_en = WordList((2,))
+    awl5_en = WordList((1,2,3,4))
     for word in words:
         awl5_en.add_word(word)
 
@@ -176,6 +176,11 @@ if __name__ == '__main__':
         print()
 
         t = time.time()
+        print('awl5_ms_denorm', awl5_ms.lookup(word, normalize=False))
+        print(time.time() - t)
+        print()
+
+        t = time.time()
         print('difflib_ms', difflib.get_close_matches(word, words_ms, n=10))
         print(time.time() - t)
         print()
@@ -192,6 +197,11 @@ if __name__ == '__main__':
 
         t = time.time()
         print('awl5_en', awl5_en.lookup(word))
+        print(time.time() - t)
+        print()
+
+        t = time.time()
+        print('awl5_en_denorm', awl5_en.lookup(word, normalize=False))
         print(time.time() - t)
         print()
 
@@ -219,7 +229,6 @@ if __name__ == '__main__':
         print('automata dist 3 en', list(find_all_matches(word, 3, m)))
         print(time.time() - t)
         print()
-
 
 if __name__ == '__main__':
 
@@ -258,4 +267,3 @@ if __name__ == '__main__':
     print(tmp[-2])
     print(tmp[-3])
     print(tmp[-4])
-

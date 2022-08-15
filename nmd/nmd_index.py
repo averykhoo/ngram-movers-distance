@@ -300,6 +300,7 @@ class ApproxWordListV5:
                             word: str,
                             dim: Union[int, float],
                             top_k: int,
+                            normalize: bool,
                             ) -> Counter:
         # todo: use existing indices and calculate cosine distance
         # todo: use existing indices and calculate jaccard
@@ -321,8 +322,11 @@ class ApproxWordListV5:
                         continue
                     if other_word_index not in min_scores:
                         min_scores[other_word_index] = [0] * len(self.__n_list)
-                    denominator = num_grams(len_word, n) + self.__word_num_grams[other_word_index][n_idx]
-                    min_scores[other_word_index][n_idx] += min(count, other_count) / denominator
+                    if normalize:
+                        denominator = num_grams(len_word, n) + self.__word_num_grams[other_word_index][n_idx]
+                        min_scores[other_word_index][n_idx] += min(count, other_count) / denominator
+                    else:
+                        min_scores[other_word_index][n_idx] += min(count, other_count)
 
         # no results, return empty Counter
         if not min_scores:
@@ -361,14 +365,23 @@ class ApproxWordListV5:
             other_len = self.__word_lens[other_word_index]
 
             # should take other word into account too
-            norm_scores = [word_scores[n_idx] / (num_grams(len_word, n) + num_grams(other_len, n))
-                           for n_idx, n in enumerate(self.__n_list)]
-            matches[other_word_index] = norm_scores
+            if normalize:
+                norm_scores = [word_scores[n_idx] / (num_grams(len_word, n) + num_grams(other_len, n))
+                               for n_idx, n in enumerate(self.__n_list)]
+                matches[other_word_index] = norm_scores
+            else:
+                matches[other_word_index] = word_scores
 
         # average the similarity scores
         return Counter({word_index: mean(scores, dim) for word_index, scores in matches.items()})
 
-    def lookup(self, word: str, top_k: int = 5, dim: Union[int, float] = 1, invert=True):
+    def lookup(self,
+               word: str,
+               top_k: int = 5,
+               dim: Union[int, float] = 1,
+               invert: bool = True,
+               normalize: bool = False,
+               ):
         # t = time.time()
         if not isinstance(word, str):
             raise TypeError(word)
@@ -385,19 +398,19 @@ class ApproxWordListV5:
         assert '\2' not in word and '\3' not in word, word
 
         # average the similarity scores
-        word_scores = self.__lookup_similarity(word, dim, top_k).most_common(top_k * 2)
+        word_scores = self.__lookup_similarity(word, dim, top_k, normalize).most_common(top_k * 2)
 
         # also return edit distances for debugging
         out = [(self.__word_list[word_index],  # word
-                match_score if invert else 1 - match_score,  # lookup result
+                match_score if invert else normalize - match_score,  # lookup result
                 # damerau_levenshtein_distance(word, self.__word_list[word_index]),
                 # edit_distance(word, self.__word_list[word_index]),
-                ngram_movers_distance(word, self.__word_list[word_index], invert=invert, normalize=True),
+                ngram_movers_distance(word, self.__word_list[word_index], invert=invert, normalize=normalize),
                 )
                for word_index, match_score in word_scores]
 
         # print(time.time() - t)
-        return out
+        return sorted(out, key=lambda x:x[1:])
 
 
 WordList = ApproxWordListV5

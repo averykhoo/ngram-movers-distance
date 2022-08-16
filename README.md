@@ -82,8 +82,12 @@ print(bow_ngram_movers_distance(bag_of_words_1=text_1.casefold().split(),
 # todo
 
 * todo: try [this paper's algo](https://www.aclweb.org/anthology/C10-1096.pdf)
-* which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
+  * which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
 * use less bizarre test strings
+* note where the algorithm breaks down
+  * matching long strings with many n-grams
+  * matching strings with significantly different lengths
+  * 
 * rename nmd_bow because it isn't really a bag-of-words, it's a token sequence
 * consider a `real_quick_ratio`-like optimization, or maybe calculate length bounds?
   * needs a cutoff to actually speed up though, makes a huge difference for difflib

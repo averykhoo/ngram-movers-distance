@@ -418,16 +418,16 @@ def sentence_split_tokens(text: str,
         paragraphs = [text.strip()]
 
     for para in paragraphs:
-        buffer = []
+        _buffer = []
         closed = False
         for token in unicode_tokenize(para, as_tokens=True, merge_apostrophe_word=merge_apostrophe_word):
-            buffer.append(token)
+            _buffer.append(token)
 
             # sentence has ended iff whitespace follows the closing punctuation
             if closed and token.category is TokenCategory.WHITESPACE:
-                if buffer:
-                    yield buffer
-                buffer = []
+                if _buffer:
+                    yield _buffer
+                _buffer = []
                 closed = False
                 continue
 
@@ -440,8 +440,8 @@ def sentence_split_tokens(text: str,
                                   '\u201D'}:
                 closed = token.text in CLOSING_PUNCTUATION
 
-        if buffer:
-            yield buffer
+        if _buffer:
+            yield _buffer
 
 
 def sentence_split(text: str,

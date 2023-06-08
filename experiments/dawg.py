@@ -1,11 +1,6 @@
 """
 see: https://gist.github.com/smhanov/94230b422c2100ae4218
-
 """
-import random
-import time
-
-from sizeof import deep_sizeof
 
 
 class DAWGNode(object):
@@ -230,6 +225,10 @@ class DAWG(object):
 
 
 if __name__ == '__main__':
+    import random
+    import time
+    from sizeof import deep_sizeof
+
     words = sorted(line.split(',')[0].strip().lower() for line in open('british-english-insane.txt', encoding='utf8'))
 
     print('building...')

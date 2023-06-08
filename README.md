@@ -6,16 +6,16 @@
 ## Why another string matching algorithm?
 
 * Edit distance really wasn't cutting it when I needed to look up a dictionary for a misspelled word
-  * With an edit distance of 1 or 2, the results are not useful since the target word isn't found
-  * With a distance >=5, the results are meaningless since it contains half the dictionary
-  * Same goes for Damerau-Levenshtein
+    * With an edit distance of 1 or 2, the results are not useful since the target word isn't found
+    * With a distance >=5, the results are meaningless since it contains half the dictionary
+    * Same goes for Damerau-Levenshtein
 * Also, edit distance is pretty slow when looking up long words in a large dictionary
-  * Even after building a finite state automaton or using a trie to optimize lookup
-  * NMD was designed with indexing in mind
-    * A simpler index could be used for Jaccard or cosine similarity over ngrams
+    * Even after building a finite state automaton or using a trie to optimize lookup
+    * NMD was designed with indexing in mind
+        * A simpler index could be used for Jaccard or cosine similarity over ngrams
 * EMD (and hence NMD) can be optimized to run really fast with some constraints
-  * Values are 1-dimensional scalars
-  * Values are always quantized
+    * Values are 1-dimensional scalars
+    * Values are always quantized
 
 # Usage
 
@@ -47,7 +47,7 @@ print(ngram_movers_distance(f'hello', f'yellow', invert=True, normalize=True))
 from nmd import WordList
 
 # get words from a text file
-with open(f'words_ms.txt', encoding=f'utf8') as f:
+with open(f'dictionary.txt', encoding=f'utf8') as f:
     words = set(f.read().split())
 
 # index words
@@ -82,17 +82,17 @@ print(bow_ngram_movers_distance(bag_of_words_1=text_1.casefold().split(),
 # todo
 
 * todo: try [this paper's algo](https://www.aclweb.org/anthology/C10-1096.pdf)
-  * which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
+    * which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
 * use less bizarre test strings
 * note where the algorithm breaks down
-  * matching long strings with many n-grams
-  * matching strings with significantly different lengths
-  * 
+    * matching long strings with many n-grams
+    * matching strings with significantly different lengths
+    *
 * rename nmd_bow because it isn't really a bag-of-words, it's a token sequence
 * consider a `real_quick_ratio`-like optimization, or maybe calculate length bounds?
-  * needs a cutoff to actually speed up though, makes a huge difference for difflib
-  * a sufficiently low cutoff is not unreasonable, although the default of 0.6 might be a little high for nmd
-  * that said the builtin diff performs pretty badly at low similarities, so 0.6 is reasonable for them
+    * needs a cutoff to actually speed up though, makes a huge difference for difflib
+    * a sufficiently low cutoff is not unreasonable, although the default of 0.6 might be a little high for nmd
+    * that said the builtin diff performs pretty badly at low similarities, so 0.6 is reasonable for them
 
 ```python
 def real_quick_ratio(self):
@@ -111,30 +111,30 @@ def real_quick_ratio(self):
 ```
 
 * create a better string container for the index, more like a `set`
-  * `add(word: str)`
-  * `remove(word: str)`
-  * `clear()`
-  * `__contains__(word: str)`
-  * `__iter__()`
+    * `add(word: str)`
+    * `remove(word: str)`
+    * `clear()`
+    * `__contains__(word: str)`
+    * `__iter__()`
 * better lookup
-  * add a min_similarity filter (float, based on normalized distance)
-    * `lookup(word: str, min_similarity: float = 0, filter: bool = True)`
-  * try `__contains__` first
-    * try levenshtein automaton (distance=1) second?
-      * sort by nmd, since most likely there will only be a few results
-    * but how to get multiple results?
-      * still need to run full search?
-      * or maybe just return top 1 result?
+    * add a min_similarity filter (float, based on normalized distance)
+        * `lookup(word: str, min_similarity: float = 0, filter: bool = True)`
+    * try `__contains__` first
+        * try levenshtein automaton (distance=1) second?
+            * sort by nmd, since most likely there will only be a few results
+        * but how to get multiple results?
+            * still need to run full search?
+            * or maybe just return top 1 result?
 * prefix lookup
-  * look for all strings that are approximately prefixed
-  * like existing index but not normalized and ignoring unmatched ngrams from target
+    * look for all strings that are approximately prefixed
+    * like existing index but not normalized and ignoring unmatched ngrams from target
 
 ## Publishing (notes for myself)
 
 * init
-  * `pip install flit`
-  * `flit init`
-  * make sure `nmd/__init__.py` contains a docstring and version
+    * `pip install flit`
+    * `flit init`
+    * make sure `nmd/__init__.py` contains a docstring and version
 * publish / update
-  * increment `__version__` in `nmd/__init__.py`
-  * `flit publish`
+    * increment `__version__` in `nmd/__init__.py`
+    * `flit publish`

@@ -94,6 +94,7 @@ def extended_edit_distance(hyp: str,
     :param substitution: substitution cost
     :param jump: jump cost
     :param rho: coverage cost weight
+    :param debug: print the full table of costs
     :return: EED score of hyp given ref (not symmetric)
     """
 
@@ -112,7 +113,7 @@ def extended_edit_distance(hyp: str,
     # coverage: count how many times each char is visited
     visit_coverage = [0.0] * (len(hyp) + 1)
 
-    # the i-th row stores cost of cheapest path from (0,0) to (i,l) in CDER alignment grid
+    # the i-th row stores cost of the cheapest path from (0,0) to (i,l) in CDER alignment grid
     row = [0.0] + [1.0] * len(hyp)  # CDER initial row
 
     for ref_idx, ref_char in enumerate(ref):

@@ -14,7 +14,7 @@ from typing import Set
 from typing import Tuple
 
 # defined types
-from find_replace_trie import Trie
+from experiments.find_replace_trie import Trie
 from sizeof import deep_sizeof
 
 State = Tuple[int, int]  # tuple of (position, distance)

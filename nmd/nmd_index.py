@@ -153,7 +153,6 @@ class ApproxWordListV3:
                         for word_index, scores in matches.items()})
 
     def lookup(self, word: str, top_k: int = 10, dim: Union[int, float] = 1):
-        # t = time.time()
         if not isinstance(word, str):
             raise TypeError(word)
         if len(word) == 0:
@@ -175,8 +174,8 @@ class ApproxWordListV3:
         # also return edit distances for debugging
         out = [(self.__vocabulary[word_index],
                 match_score,
-                # damerau_levenshtein_distance(word, self.__vocabulary[word_index]),
-                # edit_distance(word, self.__vocabulary[word_index]),
+                # (debugging) damerau_levenshtein_distance(word, self.__vocabulary[word_index]),
+                # (debugging) edit_distance(word, self.__vocabulary[word_index]),
                 ngram_movers_distance(word, self.__vocabulary[word_index], invert=True, normalize=True),
                 )
                for word_index, match_score in counter.most_common(top_k * 2)]
@@ -382,7 +381,6 @@ class ApproxWordListV5:
                invert: bool = True,
                normalize: bool = False,
                ):
-        # t = time.time()
         if not isinstance(word, str):
             raise TypeError(word)
         if len(word) == 0:
@@ -403,14 +401,14 @@ class ApproxWordListV5:
         # also return edit distances for debugging
         out = [(self.__word_list[word_index],  # word
                 match_score if invert else normalize - match_score,  # lookup result
-                # damerau_levenshtein_distance(word, self.__word_list[word_index]),
-                # edit_distance(word, self.__word_list[word_index]),
+                # (debugging) damerau_levenshtein_distance(word, self.__word_list[word_index]),
+                # (debugging) edit_distance(word, self.__word_list[word_index]),
                 ngram_movers_distance(word, self.__word_list[word_index], invert=invert, normalize=normalize),
                 )
                for word_index, match_score in word_scores]
 
         # print(time.time() - t)
-        return sorted(out, key=lambda x:x[1:])
+        return sorted(out, key=lambda x: x[1:])
 
 
 WordList = ApproxWordListV5

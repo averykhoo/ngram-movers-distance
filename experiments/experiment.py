@@ -8,8 +8,8 @@ from automata import find_all_matches
 from nmd.nmd import emd_1d as emd_1d_fast
 from nmd.nmd import ngram_movers_distance
 from nmd.nmd_bow import bow_ngram_movers_distance
-from nmd.nmd_index import WordList
 from nmd.nmd_index import ApproxWordListV3
+from nmd.nmd_index import WordList
 from tokenizer import unicode_tokenize
 
 
@@ -123,11 +123,11 @@ if __name__ == '__main__':
     with open('words_ms.txt', encoding='utf8') as f:
         words_ms = set(f.read().split())
 
-    awl3_ms = ApproxWordListV3((1,2,3,4))
+    awl3_ms = ApproxWordListV3((1, 2, 3, 4))
     for word in words_ms:
         awl3_ms.add_word(word)
 
-    awl5_ms = WordList((1,2,3,4))
+    awl5_ms = WordList((1, 2, 3, 4))
     for word in words_ms:
         awl5_ms.add_word(word)
 
@@ -135,11 +135,11 @@ if __name__ == '__main__':
         # with open('british-english-insane.txt', encoding='utf8') as f:
         words = set(f.read().split())
 
-    awl3_en = ApproxWordListV3((1,2,3,4))
+    awl3_en = ApproxWordListV3((1, 2, 3, 4))
     for word in words:
         awl3_en.add_word(word)
 
-    awl5_en = WordList((1,2,3,4))
+    awl5_en = WordList((1, 2, 3, 4))
     for word in words:
         awl5_en.add_word(word)
 

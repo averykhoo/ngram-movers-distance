@@ -51,10 +51,10 @@ def ngram_movers_distance(word_1: str,
     # generate n_gram indices and index their locations
     n_gram_locations_1 = dict()
     for idx in range(num_grams_1):
-        n_gram_locations_1.setdefault(word_1[idx:idx + n], []).append(idx / (num_grams_1 - 1))
+        n_gram_locations_1.setdefault(word_1[idx:idx + n], []).append(idx / max(1, num_grams_1 - 1))
     n_gram_locations_2 = dict()
     for idx in range(num_grams_2):
-        n_gram_locations_2.setdefault(word_2[idx:idx + n], []).append(idx / (num_grams_2 - 1))
+        n_gram_locations_2.setdefault(word_2[idx:idx + n], []).append(idx / max(1, num_grams_2 - 1))
 
     # we want to calculate the earth mover distance for all n-grams in both words, which uses the following equation:
     # > distance = sum(emd_1d(n_gram_locations_1.get(n_gram, []), n_gram_locations_2.get(n_gram, []))

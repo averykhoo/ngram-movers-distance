@@ -82,6 +82,7 @@ print(bow_ngram_movers_distance(bag_of_words_1=text_1.casefold().split(),
 # todo
 
 * `from nmd import nmd` should return a function, not a module -> refactor this
+* try out cython 3? maybe in pure python mode
 * todo: try [this paper's algo](https://www.aclweb.org/anthology/C10-1096.pdf)
     * which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
 * use less bizarre test strings

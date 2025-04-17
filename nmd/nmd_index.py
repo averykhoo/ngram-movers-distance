@@ -630,6 +630,7 @@ class ApproxWordListV6:
             _similarity = ngram_movers_distance(word, self.__word_list[word_index], invert=True, normalize=normalize)
             counter[word_index] = (match_score, _similarity)
 
+        return counter.most_common(top_k)
         return [self.__word_list[word_index] for word_index, _ in counter.most_common(top_k)]
 
 

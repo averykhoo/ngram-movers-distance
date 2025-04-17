@@ -5,12 +5,12 @@ from typing import Sequence
 
 from automata import Matcher
 from automata import find_all_matches
-from nmd.nmd_bow import bow_ngram_movers_distance
 from nmd.nmd_core import emd_1d as emd_1d_fast
 from nmd.nmd_core import ngram_movers_distance
 from nmd.nmd_index import ApproxWordListV3
-from nmd.nmd_index import WordList
-from tokenizer import unicode_tokenize
+from nmd.nmd_index import ApproxWordListV5
+from nmd.nmd_index import ApproxWordListV6
+from nmd.nmd_word_set import WordSet
 
 
 def emd_1d_slow(positions_x: Sequence[float],
@@ -123,25 +123,57 @@ if __name__ == '__main__':
     with open('words_ms.txt', encoding='utf8') as f:
         words_ms = set(f.read().split())
 
+    t = time.perf_counter()
     awl3_ms = ApproxWordListV3((1, 2, 3, 4))
     for word in words_ms:
         awl3_ms.add_word(word)
+    print('build awl3_ms', time.perf_counter() - t)
 
-    awl5_ms = WordList((1, 2, 3, 4))
+    t = time.perf_counter()
+    awl5_ms = ApproxWordListV5((1, 2, 3, 4))
     for word in words_ms:
         awl5_ms.add_word(word)
+    print('build awl5_ms', time.perf_counter() - t)
 
-    with open('words_en.txt', encoding='utf8') as f:
-        # with open('british-english-insane.txt', encoding='utf8') as f:
+    t = time.perf_counter()
+    awl6_ms = ApproxWordListV6((1, 2, 3, 4))
+    for word in words_ms:
+        awl6_ms.add_word(word)
+    print('build awl6_ms', time.perf_counter() - t)
+
+    t = time.perf_counter()
+    ws_ms = WordSet(ngram_sizes=(1, 2, 3, 4))
+    for word in words_ms:
+        ws_ms.add(word)
+    print('build ws_ms', time.perf_counter() - t)
+
+    # with open('words_en.txt', encoding='utf8') as f:
+    with open('british-english-insane.txt', encoding='utf8') as f:
         words = set(f.read().split())
 
+    t = time.perf_counter()
     awl3_en = ApproxWordListV3((1, 2, 3, 4))
     for word in words:
         awl3_en.add_word(word)
+    print('build awl3_en', time.perf_counter() - t)
 
-    awl5_en = WordList((1, 2, 3, 4))
+    t = time.perf_counter()
+    awl5_en = ApproxWordListV5((1, 2, 3, 4))
     for word in words:
         awl5_en.add_word(word)
+    print('build awl5_en', time.perf_counter() - t)
+
+    t = time.perf_counter()
+    awl6_en = ApproxWordListV6((1, 2, 3, 4))
+    for word in words:
+        awl6_en.add_word(word)
+    print('build awl6_en', time.perf_counter() - t)
+
+    t = time.perf_counter()
+    ws_en = WordSet(ngram_sizes=(1, 2, 3, 4))
+    for word in words:
+        ws_en.add(word)
+    print('build ws_en', time.perf_counter() - t)
 
     # bananana
     # supercallousedfragilemisticexepialidocus
@@ -152,10 +184,14 @@ if __name__ == '__main__':
     # chomosrome
     # chrisanthumem
     # instalatiomn
-    print(awl3_ms.lookup('bananananaanananananana'))
-    print(awl5_ms.lookup('bananananaanananananana'))
-    print(awl3_en.lookup('bananananaanananananana'))
-    print(awl5_en.lookup('bananananaanananananana'))
+    print('awl3_ms', awl3_ms.lookup('bananananaanananananana'))
+    print('awl5_ms', awl5_ms.lookup('bananananaanananananana'))
+    print('awl6_ms', awl6_ms.lookup('bananananaanananananana'))
+    print('ws_ms', ws_ms.find_similar('bananananaanananananana'))
+    print('awl3_en', awl3_en.lookup('bananananaanananananana'))
+    print('awl5_en', awl5_en.lookup('bananananaanananananana'))
+    print('awl6_en', awl6_en.lookup('bananananaanananananana'))
+    print('ws_en', ws_en.find_similar('bananananaanananananana'))
 
     m = Matcher(sorted(words))
 
@@ -165,105 +201,135 @@ if __name__ == '__main__':
         if not word:
             break
 
-        t = time.time()
+        t = time.perf_counter()
         print('awl3_ms', awl3_ms.lookup(word))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('awl5_ms', awl5_ms.lookup(word))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('awl5_ms_denorm', awl5_ms.lookup(word, normalize=False))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
+        print('awl6_ms', awl6_ms.lookup(word))
+        print(time.perf_counter() - t)
+        print()
+
+        t = time.perf_counter()
+        print('awl6_ms_denorm', awl6_ms.lookup(word, normalize=False))
+        print(time.perf_counter() - t)
+        print()
+
+        t = time.perf_counter()
+        print('ws_ms', ws_ms.find_similar(word))
+        print(time.perf_counter() - t)
+        print()
+
+        t = time.perf_counter()
         print('difflib_ms', difflib.get_close_matches(word, words_ms, n=10))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('difflib_ms', difflib.get_close_matches(word, words_ms, n=10, cutoff=0.3))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('awl3_en', awl3_en.lookup(word))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('awl5_en', awl5_en.lookup(word))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('awl5_en_denorm', awl5_en.lookup(word, normalize=False))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
+        print('awl6_en', awl6_en.lookup(word))
+        print(time.perf_counter() - t)
+        print()
+
+        t = time.perf_counter()
+        print('awl6_en_denorm', awl6_en.lookup(word, normalize=False))
+        print(time.perf_counter() - t)
+        print()
+
+        t = time.perf_counter()
+        print('ws_en', ws_en.find_similar(word))
+        print(time.perf_counter() - t)
+        print()
+
+        t = time.perf_counter()
         print('difflib_en', difflib.get_close_matches(word, words, n=10))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('difflib_en', difflib.get_close_matches(word, words, n=10, cutoff=0.3))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('automata dist 1 en', list(find_all_matches(word, 1, m)))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('automata dist 2 en', list(find_all_matches(word, 2, m)))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-        t = time.time()
+        t = time.perf_counter()
         print('automata dist 3 en', list(find_all_matches(word, 3, m)))
-        print(time.time() - t)
+        print(time.perf_counter() - t)
         print()
 
-if __name__ == '__main__':
-
-    with open('translate-reference.txt') as f:
-        ref_lines = f.readlines()
-    with open('translate-google-offline.txt') as f:
-        hyp_lines = f.readlines()
-
-    scores_bow = []
-    scores_nmd = []
-    scores_sim = []
-    for ref_line, hyp_line in zip(ref_lines, hyp_lines):
-        ref_tokens = list(unicode_tokenize(ref_line.casefold(), words_only=True, merge_apostrophe_word=True))
-        hyp_tokens = list(unicode_tokenize(hyp_line.casefold(), words_only=True, merge_apostrophe_word=True))
-        scores_bow.append(bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4) / max(len(ref_tokens), len(hyp_tokens)))
-        scores_sim.append(
-            bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4, invert=True) / max(len(ref_tokens), len(hyp_tokens)))
-        scores_nmd.append(ngram_movers_distance(' '.join(ref_tokens), ' '.join(hyp_tokens), 4, normalize=True))
-        print(' '.join(ref_tokens))
-        print(' '.join(hyp_tokens))
-        print(scores_bow[-1])
-        print(scores_sim[-1])
-        print(scores_nmd[-1])
-
-    from matplotlib import pyplot as plt
-
-    plt.scatter(scores_bow, scores_nmd, marker='.')
-    plt.show()
-    scores_diff = [a - b for a, b in zip(scores_bow, scores_nmd)]
-    tmp = sorted(zip(scores_diff, scores_bow, scores_sim, scores_nmd, ref_lines, hyp_lines))
-    print(tmp[0])
-    print(tmp[1])
-    print(tmp[2])
-    print(tmp[3])
-    print(tmp[-1])
-    print(tmp[-2])
-    print(tmp[-3])
-    print(tmp[-4])
+# if __name__ == '__main__':
+#
+#     with open('translate-reference.txt') as f:
+#         ref_lines = f.readlines()
+#     with open('translate-google-offline.txt') as f:
+#         hyp_lines = f.readlines()
+#
+#     scores_bow = []
+#     scores_nmd = []
+#     scores_sim = []
+#     for ref_line, hyp_line in zip(ref_lines, hyp_lines):
+#         ref_tokens = list(unicode_tokenize(ref_line.casefold(), words_only=True, merge_apostrophe_word=True))
+#         hyp_tokens = list(unicode_tokenize(hyp_line.casefold(), words_only=True, merge_apostrophe_word=True))
+#         scores_bow.append(bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4) / max(len(ref_tokens), len(hyp_tokens)))
+#         scores_sim.append(
+#             bow_ngram_movers_distance(ref_tokens, hyp_tokens, 4, invert=True) / max(len(ref_tokens), len(hyp_tokens)))
+#         scores_nmd.append(ngram_movers_distance(' '.join(ref_tokens), ' '.join(hyp_tokens), 4, normalize=True))
+#         print(' '.join(ref_tokens))
+#         print(' '.join(hyp_tokens))
+#         print(scores_bow[-1])
+#         print(scores_sim[-1])
+#         print(scores_nmd[-1])
+#
+#     from matplotlib import pyplot as plt
+#
+#     plt.scatter(scores_bow, scores_nmd, marker='.')
+#     plt.show()
+#     scores_diff = [a - b for a, b in zip(scores_bow, scores_nmd)]
+#     tmp = sorted(zip(scores_diff, scores_bow, scores_sim, scores_nmd, ref_lines, hyp_lines))
+#     print(tmp[0])
+#     print(tmp[1])
+#     print(tmp[2])
+#     print(tmp[3])
+#     print(tmp[-1])
+#     print(tmp[-2])
+#     print(tmp[-3])
+#     print(tmp[-4])

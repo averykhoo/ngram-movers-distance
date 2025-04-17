@@ -122,6 +122,7 @@ if __name__ == '__main__':
 
     with open('words_ms.txt', encoding='utf8') as f:
         words_ms = set(f.read().split())
+    print(f'{len(words_ms)=}')
 
     t = time.perf_counter()
     awl3_ms = ApproxWordListV3((1, 2, 3, 4))
@@ -147,9 +148,10 @@ if __name__ == '__main__':
         ws_ms.add(word)
     print('build ws_ms', time.perf_counter() - t)
 
-    # with open('words_en.txt', encoding='utf8') as f:
-    with open('british-english-insane.txt', encoding='utf8') as f:
+    # with open('british-english-insane.txt', encoding='utf8') as f:
+    with open('words_en.txt', encoding='utf8') as f:
         words = set(f.read().split())
+    print(f'{len(words)=}')
 
     t = time.perf_counter()
     awl3_en = ApproxWordListV3((1, 2, 3, 4))

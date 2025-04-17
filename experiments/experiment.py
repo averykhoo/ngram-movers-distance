@@ -5,9 +5,9 @@ from typing import Sequence
 
 from automata import Matcher
 from automata import find_all_matches
-from nmd.nmd import emd_1d as emd_1d_fast
-from nmd.nmd import ngram_movers_distance
 from nmd.nmd_bow import bow_ngram_movers_distance
+from nmd.nmd_core import emd_1d as emd_1d_fast
+from nmd.nmd_core import ngram_movers_distance
 from nmd.nmd_index import ApproxWordListV3
 from nmd.nmd_index import WordList
 from tokenizer import unicode_tokenize

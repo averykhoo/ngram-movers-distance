@@ -1180,10 +1180,10 @@ def self_test():
     # feed in a dict
     _trie = Trie()
     _trie.update({
-        'aa':                     '2',
-        'aaa':                    '3',
+        'aa': '2',
+        'aaa': '3',
         'aaaaaaaaaaaaaaaaaaaaaa': '~',
-        'bbbb':                   '!',
+        'bbbb': '!',
     })
     assert len(_trie) == 4
 

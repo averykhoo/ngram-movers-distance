@@ -8,8 +8,8 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
-from nmd.nmd import emd_1d
-from nmd.nmd import ngram_movers_distance
+from nmd.nmd_core import emd_1d
+from nmd.nmd_core import ngram_movers_distance
 
 
 @lru_cache(maxsize=0xFFFF)
@@ -403,13 +403,12 @@ class ApproxWordListV5:
                 match_score if invert else normalize - match_score,  # lookup result
                 # (debugging) damerau_levenshtein_distance(word, self.__word_list[word_index]),
                 # (debugging) edit_distance(word, self.__word_list[word_index]),
-                ngram_movers_distance(word, self.__word_list[word_index], invert=invert, normalize=normalize),
+                # ngram_movers_distance(word, self.__word_list[word_index], invert=invert, normalize=normalize),
                 )
                for word_index, match_score in word_scores]
 
         # print(time.time() - t)
-        return sorted(out, key=lambda x: x[1:])
-
+        return sorted(out, key=lambda x: x[1:], reverse=True)
 
 
 class ApproxWordListV6:

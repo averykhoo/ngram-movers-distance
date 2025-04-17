@@ -3,7 +3,7 @@ from typing import Union
 
 import scipy.optimize
 
-from nmd.nmd import ngram_movers_distance
+from nmd.nmd_core import ngram_movers_distance
 
 
 def bow_ngram_movers_distance(bag_of_words_1: Union[str, Iterable[str]],

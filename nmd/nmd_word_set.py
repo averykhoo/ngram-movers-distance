@@ -20,7 +20,7 @@ from typing import cast
 import unicodedata
 from pyroaring import BitMap
 
-from nmd.nmd_core import emd_1d
+from nmd.emd_1d import emd_1d_old
 from nmd.nmd_index import ApproxWordListV5
 
 # BitMap=set  # this works for testing without pyroaring
@@ -395,7 +395,7 @@ class WordSet(MutableSet[str]):
                     w_pos = word_ngrams_pos[gram]
                     # Similarity = total possible matches - EMD cost
                     # Need emd_1d here. Assumes it's imported.
-                    total_similarity_contribution += len(q_pos) + len(w_pos) - emd_1d(q_pos, w_pos)
+                    total_similarity_contribution += len(q_pos) + len(w_pos) - emd_1d_old(q_pos, w_pos)
 
             # Calculate total normalization factor across all Ns
             total_normalization_factor = sum(query_num_grams) + sum(word_num_grams)

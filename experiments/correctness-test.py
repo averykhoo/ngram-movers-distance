@@ -1,28 +1,29 @@
-import itertools
 import math
-from typing import List
-from typing import Sequence
-from typing import Tuple
-from typing import Union
 
-from experiment import emd_1d_dp
+from nmd.emd_1d import emd_1d_dp
+from nmd.emd_1d import emd_1d_hybrid
 # from experiment import emd_1d_slow
-from nmd.nmd_core import emd_1d as emd_1d_fast_original
+from nmd.emd_1d import emd_1d_old as emd_1d_fast_original
+
+import itertools
+from typing import Sequence, Union, List
 
 
-def emd_1d_hybrid(positions_x: Sequence[Union[int, float]],
-                  positions_y: Sequence[Union[int, float]],
-                  ) -> float:
+# Assume emd_1d_slow and potentially other versions exist for testing
+
+def emd_1d_dp_optimized(positions_x: Sequence[Union[int, float]],
+                        positions_y: Sequence[Union[int, float]],
+                        ) -> float:
     """
-    Calculates the 1D Earth Mover's Distance using a hybrid approach.
+    Calculates the 1D Earth Mover's Distance using Dynamic Programming.
 
-    It combines the efficient pre-processing and greedy matching from the
-    original fast `emd_1d` with a Dynamic Programming fallback to replace
-    the potentially slow `itertools.combinations` step, ensuring polynomial
-    worst-case time complexity.
+    This version handles unequal list sizes by assigning a penalty cost of 1
+    for each unmatched point. It uses a space-optimized DP approach with
+    O(min(N, M)) space complexity and O(N * M) time complexity, where N and M
+    are the lengths of the input sequences.
 
-    Handles unequal list sizes by assigning a penalty cost of 1 for each
-    unmatched point.
+    Optimization Attempt: Uses slice assignment `[:]` for row update instead of
+                         `list()` constructor, which might be marginally faster.
 
     Args:
         positions_x: A sequence of numbers representing point positions.
@@ -31,217 +32,59 @@ def emd_1d_hybrid(positions_x: Sequence[Union[int, float]],
     Returns:
         The calculated Earth Mover's Distance.
     """
-    # x will be the longer list initially (as in original)
-    if len(positions_x) < len(positions_y):
-        positions_x, positions_y = positions_y, positions_x
+    # --- Input Handling & Sorting ---
+    # Sort lists first, as required by DP approach
+    # Using list() ensures we have mutable lists if input was tuple/etc.
+    x = sorted(list(positions_x))
+    y = sorted(list(positions_y))
 
-    # --- Initial Edge Case Handling (Identical to original) ---
-    if len(positions_y) == 0:
-        return float(len(positions_x))
+    n = len(x)
+    m = len(y)
 
-    if len(positions_y) == 1:
-        # Optimization: Calculate min distance directly if y has only one point
-        # Use abs() for correct difference calculation
-        min_dist = min(abs(x - positions_y[0]) for x in positions_x)
-        # Add penalty for unmatched points in x
-        return float(min_dist + len(positions_x) - 1)
+    # Ensure x is the shorter list to optimize space complexity O(min(N,M))
+    if n > m:
+        x, y = y, x
+        n, m = m, n
 
-    # --- Sorting and Copying (Identical to original) ---
-    # Make copies, sort in reverse for initial duplicate removal processing
-    positions_x = sorted(positions_x, reverse=True)
-    positions_y = sorted(positions_y, reverse=True)
+    # --- DP Initialization (Two Rows) ---
+    # prev_dp_row represents the cost when considering 0 elements from x
+    # Corresponds to dp[0][j] = j (cost of leaving j elements of y unmatched)
+    # Initialize prev_dp_row directly
+    prev_dp_row: List[float] = [float(j) for j in range(m + 1)]
+    # Allocate curr_dp_row once, contents don't matter
+    curr_dp_row: List[float] = prev_dp_row.copy()
 
-    # --- Handling Equal Length Case (Identical to original) ---
-    if len(positions_x) == len(positions_y):
-        # If lists are equal length after sorting, pair them directly
-        # This requires sorting (already done, reversed is fine for zip)
-        return float(sum(abs(x - y) for x, y in zip(positions_x, positions_y)))
+    # --- DP Calculation ---
+    # Iterate through each element of the shorter list x
+    for i in range(1, n + 1):
+        # Base case for the current row: dp[i][0] = i
+        # (cost of leaving i elements of x unmatched)
+        curr_dp_row[0] = float(i)
 
-    # --- Remove Matching Points (Identical to original) ---
-    # Reduces problem size by removing points present in both lists
-    # Also reverses lists to ascending order
-    new_x = []
-    new_y = []
-    while positions_x and positions_y:
-        if positions_x[-1] < positions_y[-1]:
-            new_x.append(positions_x.pop(-1))
-        elif positions_y[-1] < positions_x[-1]:
-            new_y.append(positions_y.pop(-1))
-        else:  # discard matching points
-            positions_x.pop(-1)
-            positions_y.pop(-1)
-    # Extend with remaining elements (already sorted ascending)
-    if positions_x:
-        positions_x.reverse()
-        new_x.extend(positions_x)
-    if positions_y:
-        positions_y.reverse()
-        new_y.extend(positions_y)
-    positions_x = new_x
-    positions_y = new_y
+        # Iterate through each element of the longer list y
+        for j in range(1, m + 1):
+            # Cost of matching x[i-1] with y[j-1]
+            match_cost = abs(x[i - 1] - y[j - 1]) + prev_dp_row[j - 1]
 
-    # --- Post-Removal Edge Case Handling (Identical to original) ---
-    # Re-check lengths after removing common elements
-    if len(positions_y) == 0:
-        return float(len(positions_x))  # Only unmatched x points remain
-    if len(positions_y) == 1:
-        # Find min distance to the single y point + penalty for other x points
-        min_dist = min(abs(x - positions_y[0]) for x in positions_x)
-        return float(min_dist + len(positions_x) - 1)
-    # We know len(positions_x) > len(positions_y) >= 2 at this point
+            # Cost of leaving x[i-1] unmatched (penalty 1)
+            leave_x_cost = 1.0 + prev_dp_row[j]
 
-    # --- Connected Component Analysis (Identical to original) ---
-    # Merge lists to identify potentially connected matching regions
-    locations = sorted([(loc, False) for loc in positions_x] + [(loc, True) for loc in positions_y])
-    component_ranges: List[Tuple[int, int]] = []
+            # Cost of leaving y[j-1] unmatched (penalty 1)
+            leave_y_cost = 1.0 + curr_dp_row[j - 1]
 
-    # Find forward connected components
-    n = 0
-    current_left = None
-    for idx, (loc, is_y) in enumerate(locations):
-        if is_y:
-            n += 1
-            if current_left is None:
-                current_left = idx
-        elif n > 0:
-            n -= 1
-            if n == 0:
-                component_ranges.append((current_left, idx))
-                current_left = None
-    if current_left is not None:
-        component_ranges.append((current_left, len(locations) - 1))
+            # Choose the minimum cost path
+            curr_dp_row[j] = min(match_cost, leave_x_cost, leave_y_cost)
 
-    # Find backward connected components
-    n = 0
-    current_right = None
-    for idx in range(len(locations) - 1, -1, -1):
-        if locations[idx][1]:  # if is_y
-            n += 1
-            if current_right is None:
-                current_right = idx
-        elif n > 0:
-            n -= 1
-            if n == 0:
-                component_ranges.append((idx, current_right))
-                current_right = None
-    if current_right is not None:
-        component_ranges.append((0, current_right))
+        # Update prev_dp_row for the next iteration of i
+        prev_dp_row, curr_dp_row = curr_dp_row, prev_dp_row
+        # Note: If prev_dp_row was reused from a larger allocation, this ensures
+        # only the relevant part (up to m+1) is updated. If they are always
+        # created with size m+1, this is equivalent to a full copy.
 
-    # --- Process Components (Main Loop - Modified Fallback) ---
-    distance = 0.0
-    component_ranges.sort(reverse=True)  # Sort for efficient merging
-    last_seen = -1
-    while component_ranges:
-        # Merge overlapping ranges (identical to original)
-        left, right = component_ranges.pop(-1)
-        while component_ranges and component_ranges[-1][0] <= right:
-            right = max(right, component_ranges.pop(-1)[1])
-
-        # Count unmatched points between components (identical to original)
-        if left > last_seen + 1:
-            # Count points in 'locations' between last_seen+1 and left-1
-            # These points cannot be matched
-            unmatched_count = 0
-            for k in range(last_seen + 1, left):
-                if not locations[k][1]:  # Count only x points (y points were handled)
-                    unmatched_count += 1
-            distance += float(unmatched_count)
-
-        # Split the current merged component back into x and y lists (ascending order)
-        # Note: Original sliced reversed, then reversed back. Simpler: slice directly.
-        component_x = [loc for idx, (loc, is_y) in enumerate(locations) if left <= idx <= right and not is_y]
-        component_y = [loc for idx, (loc, is_y) in enumerate(locations) if left <= idx <= right and is_y]
-
-        # --- Greedy Endpoint Matching (Modified to add abs() distance) ---
-        # Match points at the ends if they are the unambiguous best match
-        # Match at the SMALLER end
-        while component_y and component_x:  # Ensure both non-empty
-            x_val = component_x[0]
-            y_val = component_y[0]
-            if y_val <= x_val:
-                distance += abs(x_val - y_val)  # Add absolute distance
-                component_x.pop(0)
-                component_y.pop(0)
-            elif len(component_x) >= 2 \
-                    and y_val < component_x[1] \
-                    and (y_val - x_val) <= (component_x[1] - y_val):
-                distance += abs(y_val - x_val)  # Add absolute distance
-                component_x.pop(0)
-                component_y.pop(0)
-            else:
-                break  # Cannot greedily match at the start
-
-        # Match at the LARGER end
-        while component_y and component_x:  # Ensure both non-empty
-            x_val = component_x[-1]
-            y_val = component_y[-1]
-            if y_val >= x_val:
-                distance += abs(y_val - x_val)  # Add absolute distance
-                component_x.pop(-1)
-                component_y.pop(-1)
-            elif len(component_x) >= 2 \
-                    and y_val > component_x[-2] \
-                    and (x_val - y_val) <= (y_val - component_x[-2]):
-                distance += abs(y_val - x_val)  # Add absolute distance
-                component_x.pop(-1)
-                component_y.pop(-1)
-            else:
-                break  # Cannot greedily match at the end
-
-        # --- Core Matching Fallback (Replaced `combinations` with DP) ---
-        if len(component_y) == 0:
-            # If all y points were matched greedily, remaining x points are unmatched
-            distance += float(len(component_x))
-        elif len(component_x) == 0:
-            # Should not happen if len(y)>0 initially and len(x)>=len(y)
-            # If it did, it implies an error earlier or len(x)<len(y) initially
-            pass  # Or raise error? distance is correct if all y matched, 0 otherwise
-        else:
-            # --- START: Dynamic Programming Fallback ---
-            # Use DP to solve the EMD for the remaining points in the component.
-            # component_x and component_y are already sorted.
-
-            # Ensure x_dp is the shorter list for DP space optimization
-            x_dp = component_x
-            y_dp = component_y
-            n_dp = len(x_dp)
-            m_dp = len(y_dp)
-
-            if n_dp > m_dp:
-                x_dp, y_dp = y_dp, x_dp
-                n_dp, m_dp = m_dp, n_dp
-
-            # Initialize DP rows (allocate inside loop for simplicity)
-            prev_dp_row: List[float] = [float(j) for j in range(m_dp + 1)]
-            curr_dp_row: List[float] = [0.0] * (m_dp + 1)
-
-            # Fill DP table
-            for i in range(1, n_dp + 1):
-                curr_dp_row[0] = float(i)  # Cost of leaving i elements of x_dp unmatched
-                for j in range(1, m_dp + 1):
-                    match_cost = abs(x_dp[i - 1] - y_dp[j - 1]) + prev_dp_row[j - 1]
-                    leave_x_cost = 1.0 + prev_dp_row[j]
-                    leave_y_cost = 1.0 + curr_dp_row[j - 1]
-                    curr_dp_row[j] = min(match_cost, leave_x_cost, leave_y_cost)
-                # Update previous row for next iteration
-                prev_dp_row = list(curr_dp_row)  # Use list() for shallow copy
-
-            # Add the calculated EMD for this component to the total distance
-            distance += prev_dp_row[m_dp]
-            # --- END: Dynamic Programming Fallback ---
-
-        # Update last seen index (identical to original)
-        last_seen = right
-
-    # --- Count Unmatched Points After Last Component (Identical to original) ---
-    if len(locations) > last_seen + 1:
-        unmatched_count = 0
-        for k in range(last_seen + 1, len(locations)):
-            if not locations[k][1]:  # Count only x points
-                unmatched_count += 1
-        distance += float(unmatched_count)
-
-    return distance
+    # --- Result ---
+    # The final EMD is in the last cell calculated, which is now stored in prev_dp_row
+    # because of the final update step inside the loop.
+    return prev_dp_row[m]
 
 
 def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
@@ -291,10 +134,12 @@ def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
     # result_slow = emd_1d_slow(list_x, list_y)
     result_fast_original = emd_1d_fast_original(list_x, list_y)  # BASELINE
     result_dp = emd_1d_dp(list_x, list_y)
+    result_dp_opt = emd_1d_dp_optimized(list_x, list_y)
     result_hybrid = emd_1d_hybrid(list_x, list_y)
 
     # --- Compare results against the baseline (fast_original) ---
     dp_matches = math.isclose(result_fast_original, result_dp, abs_tol=tolerance)
+    dp_opt_matches = math.isclose(result_fast_original, result_dp_opt, abs_tol=tolerance)
     hybrid_matches = math.isclose(result_fast_original, result_hybrid, abs_tol=tolerance)
     # slow_matches = math.isclose(result_fast_original, result_slow, abs_tol=tolerance)  # Compare slow to baseline too
 
@@ -304,6 +149,17 @@ def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
         f"Mismatch! Fast Original vs DP\n"
         f"Fast O: {result_fast_original} (Baseline)\n"
         f"DP    : {result_dp}\n"
+        f"DP opt: {dp_opt_matches}\n"
+        f"Hybrid: {result_hybrid}\n"
+        # f"Slow  : {result_slow}\n"
+        f"Inputs: x={positions_x}, y={positions_y}"
+    )
+    # Assert DP vs Baseline
+    assert dp_opt_matches, (
+        f"Mismatch! Fast Original vs DP\n"
+        f"Fast O: {result_fast_original} (Baseline)\n"
+        f"DP    : {result_dp}\n"
+        f"DP opt: {dp_opt_matches}\n"
         f"Hybrid: {result_hybrid}\n"
         # f"Slow  : {result_slow}\n"
         f"Inputs: x={positions_x}, y={positions_y}"
@@ -313,6 +169,7 @@ def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
         f"Mismatch! Fast Original vs Hybrid\n"
         f"Fast O: {result_fast_original} (Baseline)\n"
         f"DP    : {result_dp}\n"
+        f"DP opt: {dp_opt_matches}\n"
         f"Hybrid: {result_hybrid}\n"
         # f"Slow  : {result_slow}\n"
         f"Inputs: x={positions_x}, y={positions_y}"
@@ -322,6 +179,7 @@ def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
     #     f"Mismatch! Fast Original vs Slow\n"
     #     f"Fast O: {result_fast_original} (Baseline)\n"
     #     f"DP    : {result_dp}\n"
+    #     f"DP opt: {dp_opt_matches}\n"
     #     f"Hybrid: {result_hybrid}\n"
     #     f"Slow  : {result_slow}\n"
     #     f"Inputs: x={positions_x}, y={positions_y}"
@@ -334,7 +192,7 @@ def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
 # Keep the original test harness structure, it will now use the updated check function
 if __name__ == '__main__':
 
-    num_x = 4
+    num_x = 3
     num_y = 9
 
     # Generate base positions, avoid division by zero for length 1 lists

@@ -4,108 +4,14 @@ import time
 from typing import Sequence
 
 from automata import Matcher
-from nmd.nmd_core import emd_1d as emd_1d_fast
+from nmd.emd_1d import emd_1d_dp
+from nmd.emd_1d import emd_1d_old as emd_1d_fast
+from nmd.emd_1d import emd_1d_slow
 from nmd.nmd_core import ngram_movers_distance
 from nmd.nmd_index import ApproxWordListV5
 from nmd.nmd_index import ApproxWordListV6
 from nmd.nmd_word_set import WordSet
 
-
-def emd_1d_slow(positions_x: Sequence[float],
-                positions_y: Sequence[float],
-                ) -> float:
-    # positions_x must be longer
-    if len(positions_x) < len(positions_y):
-        positions_x, positions_y = positions_y, positions_x
-
-    # sort both lists
-    positions_x = sorted(positions_x)
-    positions_y = sorted(positions_y)
-
-    # find the minimum cost alignment
-    costs = [len(positions_y)]
-    for x_combination in itertools.combinations(positions_x, len(positions_y)):
-        costs.append(sum(abs(x - y) for x, y in zip(x_combination, positions_y)))
-
-    # the distance is the min cost alignment plus a count of unmatched points
-    return len(positions_x) - len(positions_y) + min(costs)
-
-
-import itertools
-from typing import Sequence, Union, List
-
-# Assume this exists for comparison
-# def emd_1d_slow(...): ... as provided in the prompt
-
-def emd_1d_dp(positions_x: Sequence[Union[int, float]],
-              positions_y: Sequence[Union[int, float]],
-             ) -> float:
-    """
-    Calculates the 1D Earth Mover's Distance using Dynamic Programming.
-
-    This version handles unequal list sizes by assigning a penalty cost of 1
-    for each unmatched point. It uses a space-optimized DP approach with
-    O(min(N, M)) space complexity and O(N * M) time complexity, where N and M
-    are the lengths of the input sequences.
-
-    Args:
-        positions_x: A sequence of numbers representing point positions.
-        positions_y: Another sequence of numbers representing point positions.
-
-    Returns:
-        The calculated Earth Mover's Distance.
-    """
-    # --- Input Handling & Sorting ---
-    # Ensure inputs are lists for potential sorting/modification
-    # Sort lists first, as required by DP approach and helps with comparisons
-    x = sorted(list(positions_x))
-    y = sorted(list(positions_y))
-
-    n = len(x)
-    m = len(y)
-
-    # Ensure x is the shorter list to optimize space complexity O(min(N,M))
-    if n > m:
-        x, y = y, x
-        n, m = m, n
-
-    # --- DP Initialization (Two Rows) ---
-    # prev_dp_row represents the cost when considering 0 elements from x
-    # Corresponds to dp[0][j] = j (cost of leaving j elements of y unmatched)
-    prev_dp_row: List[float] = [float(j) for j in range(m + 1)]
-    curr_dp_row: List[float] = [0.0] * (m + 1)
-
-    # --- DP Calculation ---
-    # Iterate through each element of the shorter list x
-    for i in range(1, n + 1):
-        # Base case for the current row: dp[i][0] = i
-        # (cost of leaving i elements of x unmatched)
-        curr_dp_row[0] = float(i)
-
-        # Iterate through each element of the longer list y
-        for j in range(1, m + 1):
-            # Cost of matching x[i-1] with y[j-1]
-            match_cost = abs(x[i-1] - y[j-1]) + prev_dp_row[j-1]
-
-            # Cost of leaving x[i-1] unmatched (penalty 1)
-            leave_x_cost = 1.0 + prev_dp_row[j]
-
-            # Cost of leaving y[j-1] unmatched (penalty 1)
-            leave_y_cost = 1.0 + curr_dp_row[j-1]
-
-            # Choose the minimum cost path
-            curr_dp_row[j] = min(match_cost, leave_x_cost, leave_y_cost)
-
-        # Update prev_dp_row for the next iteration of i
-        # Use list() constructor for a shallow copy, preventing aliasing issues
-        prev_dp_row = list(curr_dp_row)
-        # Or: prev_dp_row = curr_dp_row[:]
-        # Avoid: prev_dp_row = curr_dp_row (this would just make them point to the same list)
-
-
-    # --- Result ---
-    # The final EMD is in the last cell calculated, corresponding to dp[n][m]
-    return prev_dp_row[m]
 
 # --- Testing Rig ---
 def check_dp_correctness(pos_x, pos_y):
@@ -125,6 +31,7 @@ def check_dp_correctness(pos_x, pos_y):
         print(f"Error during check: {e}\nInputs: x={pos_x}, y={pos_y}")
         return False
 
+
 if __name__ == '__main__':
     print("Running EMD DP Correctness Checks...")
     test_cases = [
@@ -141,40 +48,42 @@ if __name__ == '__main__':
         ([0.2, 0.8], [0.1, 0.5, 0.9]),
         ([0.1, 0.2, 0.3], [0.1, 0.2, 0.3]),
         ([0.1, 0.2, 0.3], [0.1, 0.2, 0.4]),
-        ([0.1, 0.2, 0.3], [0.1, 0.3, 0.5]), # Mismatch potential
-        ([0.1, 0.3], [0.2, 0.4]), # Simple interleaving
+        ([0.1, 0.2, 0.3], [0.1, 0.3, 0.5]),  # Mismatch potential
+        ([0.1, 0.3], [0.2, 0.4]),  # Simple interleaving
         ([0.1, 0.2, 0.8, 0.9], [0.15, 0.85]),
         ([0.15, 0.85], [0.1, 0.2, 0.8, 0.9]),
-        ([0.1]*5, [0.9]*3),
-        ([0.1]*3, [0.9]*5),
+        ([0.1] * 5, [0.9] * 3),
+        ([0.1] * 3, [0.9] * 5),
         ([0.1, 0.1, 0.9, 0.9], [0.1, 0.9]),
         ([0.1, 0.9], [0.1, 0.1, 0.9, 0.9]),
-        (list(range(10)), list(range(5,15))), # Using integers too
+        (list(range(10)), list(range(5, 15))),  # Using integers too
     ]
 
     all_passed = True
     for i, (x, y) in enumerate(test_cases):
-        print(f"--- Test Case {i+1} ---")
+        print(f"--- Test Case {i + 1} ---")
         if not check_dp_correctness(x, y):
-             all_passed = False
+            all_passed = False
 
     # Add some random tests
     print("\n--- Random Tests ---")
     import random
+
     random.seed(42)
     for i in range(20):
-         len_x = random.randint(0, 15)
-         len_y = random.randint(0, 15)
-         x_rand = sorted([random.random() for _ in range(len_x)])
-         y_rand = sorted([random.random() for _ in range(len_y)])
-         if not check_dp_correctness(x_rand, y_rand):
-             all_passed = False
+        len_x = random.randint(0, 15)
+        len_y = random.randint(0, 15)
+        x_rand = sorted([random.random() for _ in range(len_x)])
+        y_rand = sorted([random.random() for _ in range(len_y)])
+        if not check_dp_correctness(x_rand, y_rand):
+            all_passed = False
 
     print("\n--- Summary ---")
     if all_passed:
         print("All EMD DP tests passed!")
     else:
         print("Some EMD DP tests failed!")
+
 
 def check_correct_emd_1d(positions_x: Sequence[float],
                          positions_y: Sequence[float],

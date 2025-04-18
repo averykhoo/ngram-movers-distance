@@ -8,7 +8,7 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
-from nmd.emd_1d import emd_1d_old
+from nmd.emd_1d import emd_1d_dp
 from nmd.nmd_core import ngram_movers_distance
 
 
@@ -140,7 +140,8 @@ class ApproxWordListV3:
                 for other_word_index, other_locations in self.__n_gram_indices.get(n_gram, []):
                     word_scores = matches.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
                     # should be sum not max, but this is easier to deal with
-                    word_scores[n_idx] += max(len(locations), len(other_locations)) - emd_1d_old(locations, other_locations)
+                    word_scores[n_idx] += max(len(locations), len(other_locations)) - emd_1d_dp(locations,
+                                                                                                other_locations)
 
         # normalize scores
         for other_word_index, word_scores in matches.items():
@@ -357,7 +358,7 @@ class ApproxWordListV5:
                         continue
                     word_scores = matches.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
                     word_scores[n_idx] += len(locations) + len(other_locations)
-                    word_scores[n_idx] -= emd_1d_old(locations, other_locations)
+                    word_scores[n_idx] -= emd_1d_dp(locations, other_locations)
 
         # normalize scores
         for other_word_index, word_scores in matches.items():
@@ -585,7 +586,7 @@ class ApproxWordListV6:
                         continue
                     word_scores = matches.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
                     word_scores[n_idx] += len(locations) + len(other_locations)
-                    word_scores[n_idx] -= emd_1d_old(locations, other_locations)
+                    word_scores[n_idx] -= emd_1d_dp(locations, other_locations)
 
         # normalize scores
         for other_word_index, word_scores in matches.items():

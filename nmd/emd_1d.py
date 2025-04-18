@@ -5,6 +5,26 @@ from typing import Tuple
 from typing import Union
 
 
+def emd_1d_slow(positions_x: Sequence[float],
+                positions_y: Sequence[float],
+                ) -> float:
+    # positions_x must be longer
+    if len(positions_x) < len(positions_y):
+        positions_x, positions_y = positions_y, positions_x
+
+    # sort both lists
+    positions_x = sorted(positions_x)
+    positions_y = sorted(positions_y)
+
+    # find the minimum cost alignment
+    costs = [len(positions_y)]
+    for x_combination in itertools.combinations(positions_x, len(positions_y)):
+        costs.append(sum(abs(x - y) for x, y in zip(x_combination, positions_y)))
+
+    # the distance is the min cost alignment plus a count of unmatched points
+    return len(positions_x) - len(positions_y) + min(costs)
+
+
 def emd_1d_dp(positions_x: Sequence[Union[int, float]],
               positions_y: Sequence[Union[int, float]],
               ) -> float:
@@ -29,33 +49,33 @@ def emd_1d_dp(positions_x: Sequence[Union[int, float]],
     # --- Input Handling & Sorting ---
     # Sort lists first, as required by DP approach
     # Using list() ensures we have mutable lists if input was tuple/etc.
-    x = sorted(list(positions_x))
-    y = sorted(list(positions_y))
-    n = len(x)
-    m = len(y)
+    x = sorted(positions_x)
+    y = sorted(positions_y)
+    len_x = len(x)
+    len_y = len(y)
 
     # Ensure x is the shorter list to optimize space complexity O(min(N,M))
-    if n > m:
+    if len_x > len_y:
         x, y = y, x
-        n, m = m, n
+        len_x, len_y = len_y, len_x
 
     # --- DP Initialization (Two Rows) ---
     # prev_dp_row represents the cost when considering 0 elements from x
     # Corresponds to dp[0][j] = j (cost of leaving j elements of y unmatched)
     # Initialize prev_dp_row directly
-    prev_dp_row: List[float] = [float(j) for j in range(m + 1)]
+    prev_dp_row: List[float] = [float(j) for j in range(len_y + 1)]
     # Allocate curr_dp_row once, contents don't matter
     curr_dp_row: List[float] = prev_dp_row.copy()
 
     # --- DP Calculation ---
     # Iterate through each element of the shorter list x
-    for i in range(1, n + 1):
+    for i in range(1, len_x + 1):
         # Base case for the current row: dp[i][0] = i
-        # (cost of leaving i elements of x unmatched)
+        # (cost of leaving the first i elements of x unmatched)
         curr_dp_row[0] = float(i)
 
         # Iterate through each element of the longer list y
-        for j in range(1, m + 1):
+        for j in range(1, len_y + 1):
             # Cost of matching x[i-1] with y[j-1]
             match_cost = abs(x[i - 1] - y[j - 1]) + prev_dp_row[j - 1]
 
@@ -69,15 +89,13 @@ def emd_1d_dp(positions_x: Sequence[Union[int, float]],
             curr_dp_row[j] = min(match_cost, leave_x_cost, leave_y_cost)
 
         # Update prev_dp_row for the next iteration of i
+        # to avoid allocations, we just do a swap
         prev_dp_row, curr_dp_row = curr_dp_row, prev_dp_row
-        # Note: If prev_dp_row was reused from a larger allocation, this ensures
-        # only the relevant part (up to m+1) is updated. If they are always
-        # created with size m+1, this is equivalent to a full copy.
 
     # --- Result ---
     # The final EMD is in the last cell calculated, which is now stored in prev_dp_row
     # because of the final update step inside the loop.
-    return prev_dp_row[m]
+    return prev_dp_row[len_y]
 
 
 def emd_1d_hybrid(positions_x: Sequence[Union[int, float]],
@@ -520,23 +538,3 @@ def emd_1d_old(positions_x: Sequence[Union[int, float]],
         distance += len(locations) - last_seen - 1
 
     return distance
-
-
-def emd_1d_slow(positions_x: Sequence[float],
-                positions_y: Sequence[float],
-                ) -> float:
-    # positions_x must be longer
-    if len(positions_x) < len(positions_y):
-        positions_x, positions_y = positions_y, positions_x
-
-    # sort both lists
-    positions_x = sorted(positions_x)
-    positions_y = sorted(positions_y)
-
-    # find the minimum cost alignment
-    costs = [len(positions_y)]
-    for x_combination in itertools.combinations(positions_x, len(positions_y)):
-        costs.append(sum(abs(x - y) for x, y in zip(x_combination, positions_y)))
-
-    # the distance is the min cost alignment plus a count of unmatched points
-    return len(positions_x) - len(positions_y) + min(costs)

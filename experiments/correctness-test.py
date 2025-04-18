@@ -1,16 +1,17 @@
+import itertools
 import math
+import time
+from functools import lru_cache
+from typing import List
+from typing import Sequence
+from typing import Union
 
 from nmd.emd_1d import emd_1d_dp
 from nmd.emd_1d import emd_1d_hybrid
-# from experiment import emd_1d_slow
 from nmd.emd_1d import emd_1d_old as emd_1d_fast_original
-
-import itertools
-from typing import Sequence, Union, List
 
 
 # Assume emd_1d_slow and potentially other versions exist for testing
-
 def emd_1d_dp_optimized(positions_x: Sequence[Union[int, float]],
                         positions_y: Sequence[Union[int, float]],
                         ) -> float:
@@ -35,34 +36,33 @@ def emd_1d_dp_optimized(positions_x: Sequence[Union[int, float]],
     # --- Input Handling & Sorting ---
     # Sort lists first, as required by DP approach
     # Using list() ensures we have mutable lists if input was tuple/etc.
-    x = sorted(list(positions_x))
-    y = sorted(list(positions_y))
-
-    n = len(x)
-    m = len(y)
+    x = sorted(positions_x)
+    y = sorted(positions_y)
+    len_x = len(x)
+    len_y = len(y)
 
     # Ensure x is the shorter list to optimize space complexity O(min(N,M))
-    if n > m:
+    if len_x > len_y:
         x, y = y, x
-        n, m = m, n
+        len_x, len_y = len_y, len_x
 
     # --- DP Initialization (Two Rows) ---
     # prev_dp_row represents the cost when considering 0 elements from x
     # Corresponds to dp[0][j] = j (cost of leaving j elements of y unmatched)
     # Initialize prev_dp_row directly
-    prev_dp_row: List[float] = [float(j) for j in range(m + 1)]
+    prev_dp_row: List[float] = [float(j) for j in range(len_y + 1)]
     # Allocate curr_dp_row once, contents don't matter
     curr_dp_row: List[float] = prev_dp_row.copy()
 
     # --- DP Calculation ---
     # Iterate through each element of the shorter list x
-    for i in range(1, n + 1):
+    for i in range(1, len_x + 1):
         # Base case for the current row: dp[i][0] = i
-        # (cost of leaving i elements of x unmatched)
+        # (cost of leaving the first i elements of x unmatched)
         curr_dp_row[0] = float(i)
 
         # Iterate through each element of the longer list y
-        for j in range(1, m + 1):
+        for j in range(1, len_y + 1):
             # Cost of matching x[i-1] with y[j-1]
             match_cost = abs(x[i - 1] - y[j - 1]) + prev_dp_row[j - 1]
 
@@ -76,15 +76,13 @@ def emd_1d_dp_optimized(positions_x: Sequence[Union[int, float]],
             curr_dp_row[j] = min(match_cost, leave_x_cost, leave_y_cost)
 
         # Update prev_dp_row for the next iteration of i
+        # to avoid allocations, we just do a swap
         prev_dp_row, curr_dp_row = curr_dp_row, prev_dp_row
-        # Note: If prev_dp_row was reused from a larger allocation, this ensures
-        # only the relevant part (up to m+1) is updated. If they are always
-        # created with size m+1, this is equivalent to a full copy.
 
     # --- Result ---
     # The final EMD is in the last cell calculated, which is now stored in prev_dp_row
     # because of the final update step inside the loop.
-    return prev_dp_row[m]
+    return prev_dp_row[len_y]
 
 
 def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
@@ -115,15 +113,16 @@ def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
     # Check types
     assert isinstance(positions_x, Sequence), f"positions_x is not a Sequence: {type(positions_x)}"
     assert isinstance(positions_y, Sequence), f"positions_y is not a Sequence: {type(positions_y)}"
-    assert all(
-        isinstance(x, (int, float)) for x in positions_x), f"Not all elements in positions_x are numbers: {positions_x}"
-    assert all(
-        isinstance(y, (int, float)) for y in positions_y), f"Not all elements in positions_y are numbers: {positions_y}"
+    assert all(isinstance(x, (int, float)) for x in positions_x), f"Not all elems in positions_x numeric: {positions_x}"
+    assert all(isinstance(y, (int, float)) for y in positions_y), f"Not all elems in positions_y numeric: {positions_y}"
 
     # Check range (if assuming unit interval, keep this)
     # If the functions should work outside [0,1], comment this out.
     assert all(0 <= x <= 1 for x in positions_x), f"Not all elements in positions_x are in [0, 1]: {positions_x}"
     assert all(0 <= y <= 1 for y in positions_y), f"Not all elements in positions_y are in [0, 1]: {positions_y}"
+
+    # if not positions_x or not positions_y:
+    #     return max(len(positions_x), len(positions_y))
 
     # --- Run all four EMD implementations ---
     # Use lists to ensure sequences aren't exhausted if they are iterators
@@ -191,6 +190,10 @@ def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
 
 # Keep the original test harness structure, it will now use the updated check function
 if __name__ == '__main__':
+
+    t = time.perf_counter()
+    emd_1d_dp_optimized([0], [0])
+    print('warmup:', time.perf_counter() - t)
 
     num_x = 3
     num_y = 9

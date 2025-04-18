@@ -1,119 +1,11 @@
-import itertools
 import pickle
 import time
-from typing import Sequence
 
 from automata import Matcher
-from nmd.emd_1d import emd_1d_dp
-from nmd.emd_1d import emd_1d_old as emd_1d_fast
-from nmd.emd_1d import emd_1d_slow
 from nmd.nmd_core import ngram_movers_distance
 from nmd.nmd_index import ApproxWordListV5
 from nmd.nmd_index import ApproxWordListV6
 from nmd.nmd_word_set import WordSet
-
-
-# --- Testing Rig ---
-def check_dp_correctness(pos_x, pos_y):
-    """Compares emd_1d_dp against emd_1d_slow."""
-    try:
-        slow_result = emd_1d_slow(pos_x, pos_y)
-        dp_result = emd_1d_dp(pos_x, pos_y)
-        # Use assert with a tolerance for floating point comparisons
-        assert abs(slow_result - dp_result) < 1e-9, \
-            f"Mismatch! Slow={slow_result}, DP={dp_result}\nInputs: x={pos_x}, y={pos_y}"
-        # print(f"Match: Slow={slow_result}, DP={dp_result}")
-        return True
-    except AssertionError as e:
-        print(e)
-        return False
-    except Exception as e:
-        print(f"Error during check: {e}\nInputs: x={pos_x}, y={pos_y}")
-        return False
-
-
-if __name__ == '__main__':
-    print("Running EMD DP Correctness Checks...")
-    test_cases = [
-        ([], []),
-        ([0.5], []),
-        ([], [0.5]),
-        ([0.1], [0.9]),
-        ([0.9], [0.1]),
-        ([0.1, 0.9], [0.1, 0.9]),
-        ([0.1, 0.2], [0.8, 0.9]),
-        ([0.1, 0.9], [0.5]),
-        ([0.5], [0.1, 0.9]),
-        ([0.1, 0.5, 0.9], [0.2, 0.8]),
-        ([0.2, 0.8], [0.1, 0.5, 0.9]),
-        ([0.1, 0.2, 0.3], [0.1, 0.2, 0.3]),
-        ([0.1, 0.2, 0.3], [0.1, 0.2, 0.4]),
-        ([0.1, 0.2, 0.3], [0.1, 0.3, 0.5]),  # Mismatch potential
-        ([0.1, 0.3], [0.2, 0.4]),  # Simple interleaving
-        ([0.1, 0.2, 0.8, 0.9], [0.15, 0.85]),
-        ([0.15, 0.85], [0.1, 0.2, 0.8, 0.9]),
-        ([0.1] * 5, [0.9] * 3),
-        ([0.1] * 3, [0.9] * 5),
-        ([0.1, 0.1, 0.9, 0.9], [0.1, 0.9]),
-        ([0.1, 0.9], [0.1, 0.1, 0.9, 0.9]),
-        (list(range(10)), list(range(5, 15))),  # Using integers too
-    ]
-
-    all_passed = True
-    for i, (x, y) in enumerate(test_cases):
-        print(f"--- Test Case {i + 1} ---")
-        if not check_dp_correctness(x, y):
-            all_passed = False
-
-    # Add some random tests
-    print("\n--- Random Tests ---")
-    import random
-
-    random.seed(42)
-    for i in range(20):
-        len_x = random.randint(0, 15)
-        len_y = random.randint(0, 15)
-        x_rand = sorted([random.random() for _ in range(len_x)])
-        y_rand = sorted([random.random() for _ in range(len_y)])
-        if not check_dp_correctness(x_rand, y_rand):
-            all_passed = False
-
-    print("\n--- Summary ---")
-    if all_passed:
-        print("All EMD DP tests passed!")
-    else:
-        print("Some EMD DP tests failed!")
-
-
-def check_correct_emd_1d(positions_x: Sequence[float],
-                         positions_y: Sequence[float],
-                         ) -> float:
-    """
-    kind of like earth mover's distance
-    but positions are limited to within the unit interval
-    and must be quantized
-
-    :param positions_x: list of positions (each a float from 0 to 1 inclusive)
-    :param positions_y: list of positions (each a float from 0 to 1 inclusive)
-    :return:
-    """
-
-    # sanity checks
-    assert isinstance(positions_x, Sequence)
-    assert isinstance(positions_y, Sequence)
-    assert all(isinstance(x, (int, float)) for x in positions_x)
-    assert all(isinstance(y, (int, float)) for y in positions_y)
-
-    # all inputs must be in the unit interval
-    assert all(0 <= x <= 1 for x in positions_x)
-    assert all(0 <= y <= 1 for y in positions_y)
-
-    # run both slow and fast and check them
-    answer_fast = emd_1d_fast(positions_x, positions_y)
-    answer_slow = emd_1d_dp(positions_x, positions_y)
-    assert abs(answer_fast - answer_slow) < 0.00000001, (answer_slow, answer_fast, positions_x, positions_y)
-    return answer_fast
-
 
 if __name__ == '__main__':
 
@@ -127,24 +19,6 @@ if __name__ == '__main__':
         return ngram_movers_distance(word_1, word_2)
 
 
-    num_x = 7
-    num_y = 10
-
-    xs = [i / (num_x - 1) for i in range(num_x)]
-    ys = [i / (num_y - 1) for i in range(num_y)]
-    # print(xs)
-    # print(ys)
-    xs = xs + xs + xs
-
-    for x_len in range(len(xs) + 1):
-        for y_len in range(len(ys) + 1):
-            print(x_len, y_len)
-            for x_combi in itertools.combinations(xs, x_len):
-                for y_combi in itertools.combinations(ys, y_len):
-                    assert abs(
-                        check_correct_emd_1d(x_combi, y_combi) - check_correct_emd_1d(y_combi, x_combi)) < 0.0001, (
-                        x_combi, y_combi)
-    #
     # for _ in range(1000):
     #     speed_test('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     #                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')

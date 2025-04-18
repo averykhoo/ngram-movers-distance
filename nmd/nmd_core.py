@@ -1,4 +1,4 @@
-from nmd.emd_1d import emd_1d_old
+from nmd.emd_1d import emd_1d_dp
 
 
 def ngram_movers_distance(word_1: str,
@@ -65,7 +65,7 @@ def ngram_movers_distance(word_1: str,
     for n_gram, locations_1 in n_gram_locations_1.items():
         if n_gram in n_gram_locations_2:
             similarity += len(locations_1) + len(n_gram_locations_2[n_gram])
-            similarity -= emd_1d_old(locations_1, n_gram_locations_2[n_gram])
+            similarity -= emd_1d_dp(locations_1, n_gram_locations_2[n_gram])
 
     # return similarity or distance, optionally normalized
     output = similarity if invert else num_grams_1 + num_grams_2 - similarity

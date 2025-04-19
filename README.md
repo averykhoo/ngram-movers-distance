@@ -79,6 +79,16 @@ print(bow_ngram_movers_distance(bag_of_words_1=text_1.casefold().split(),
                                 ))
 ```
 
+# Testing
+
+The project includes a test suite using pytest. To run the tests:
+
+```bash
+pytest
+```
+
+For more details about the tests, see the [tests/README.md](tests/README.md) file.
+
 # todo
 
 * `from nmd import nmd` should return a function, not a module -> refactor this

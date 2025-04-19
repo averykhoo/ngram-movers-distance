@@ -2,6 +2,7 @@ import pickle
 import time
 
 from automata import Matcher
+from experiments.gemini_optimized_v5 import ApproxWordListV5b
 from nmd.nmd_core import ngram_movers_distance
 from nmd.nmd_index import ApproxWordListV5
 from nmd.nmd_index import ApproxWordListV6
@@ -63,6 +64,12 @@ if __name__ == '__main__':
     print('build awl5_ms', time.perf_counter() - t)
 
     t = time.perf_counter()
+    awl5b_ms = ApproxWordListV5b((1, 2, 3, 4))
+    for word in words_ms:
+        awl5b_ms.add_word(word)
+    print('build awl5b_ms', time.perf_counter() - t)
+
+    t = time.perf_counter()
     awl6_ms = ApproxWordListV6((1, 2, 3, 4))
     for word in words_ms:
         awl6_ms.add_word(word)
@@ -92,6 +99,12 @@ if __name__ == '__main__':
     print('build awl5_en', time.perf_counter() - t)
 
     t = time.perf_counter()
+    awl5b_en = ApproxWordListV5b((1, 2, 3, 4))
+    for word in words:
+        awl5b_en.add_word(word)
+    print('build awl5b_en', time.perf_counter() - t)
+
+    t = time.perf_counter()
     awl6_en = ApproxWordListV6((1, 2, 3, 4))
     for word in words:
         awl6_en.add_word(word)
@@ -116,21 +129,27 @@ if __name__ == '__main__':
     ]
     # print('awl3_ms', awl3_ms.lookup('bananananaanananananana'))
     print('awl5_ms', awl5_ms.lookup('bananananaanananananana', normalize=True))
+    print('awl5b_ms', awl5b_ms.lookup('bananananaanananananana', normalize=True))
     print('awl6_ms', awl6_ms.lookup('bananananaanananananana', normalize=True))
     print('ws_ms', ws_ms.find_similar('bananananaanananananana'))
     # print('awl3_en', awl3_en.lookup('bananananaanananananana'))
     print('awl5_en', awl5_en.lookup('bananananaanananananana', normalize=True))
+    print('awl5b_en', awl5b_en.lookup('bananananaanananananana', normalize=True))
     print('awl6_en', awl6_en.lookup('bananananaanananananana', normalize=True))
     print('ws_en', ws_en.find_similar('bananananaanananananana'))
 
     with open('pickles/awl5_ms.pkl', 'wb') as f:
         pickle.dump(awl5_ms, f, pickle.HIGHEST_PROTOCOL)
+    with open('pickles/awl5b_ms.pkl', 'wb') as f:
+        pickle.dump(awl5b_ms, f, pickle.HIGHEST_PROTOCOL)
     with open('pickles/awl6_ms.pkl', 'wb') as f:
         pickle.dump(awl6_ms, f, pickle.HIGHEST_PROTOCOL)
     with open('pickles/ws_ms.pkl', 'wb') as f:
         pickle.dump(ws_ms, f, pickle.HIGHEST_PROTOCOL)
     with open('pickles/awl5_en.pkl', 'wb') as f:
         pickle.dump(awl5_en, f, pickle.HIGHEST_PROTOCOL)
+    with open('pickles/awl5b_en.pkl', 'wb') as f:
+        pickle.dump(awl5b_en, f, pickle.HIGHEST_PROTOCOL)
     with open('pickles/awl6_en.pkl', 'wb') as f:
         pickle.dump(awl6_en, f, pickle.HIGHEST_PROTOCOL)
     with open('pickles/ws_en.pkl', 'wb') as f:
@@ -153,6 +172,11 @@ if __name__ == '__main__':
 
         t = time.perf_counter()
         print('awl5_ms', awl5_ms.lookup(word, normalize=True))
+        print(time.perf_counter() - t)
+        print()
+
+        t = time.perf_counter()
+        print('awl5b_ms', awl5b_ms.lookup(word, normalize=True))
         print(time.perf_counter() - t)
         print()
 
@@ -193,6 +217,11 @@ if __name__ == '__main__':
 
         t = time.perf_counter()
         print('awl5_en', awl5_en.lookup(word, normalize=True))
+        print(time.perf_counter() - t)
+        print()
+
+        t = time.perf_counter()
+        print('awl5b_en', awl5b_en.lookup(word, normalize=True))
         print(time.perf_counter() - t)
         print()
 

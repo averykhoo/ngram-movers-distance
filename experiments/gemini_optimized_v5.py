@@ -1,19 +1,26 @@
 import heapq
-import time
-from collections import Counter, defaultdict
-from typing import Dict, List, Optional, Set, Tuple, Union, Iterable, Final
+from collections import Counter
+from collections import defaultdict
+from typing import Dict
+from typing import Final
+from typing import Iterable
+from typing import List
+from typing import Optional
+from typing import Set
+from typing import Tuple
+from typing import Union
 
-# Assume these helper functions exist and are reasonably optimized:
-# Make sure these are imported correctly from your project structure
-from .nmd_core import emd_1d
-from .nmd_index_commons import get_n_grams, num_grams, mean
+from nmd.emd_1d import emd_1d_dp
+from nmd.nmd_index import get_n_grams
+from nmd.nmd_index import mean
+from nmd.nmd_index import num_grams
 
 # Requires: pip install pyroaring
 try:
     from pyroaring import BitMap
 except ImportError:
     print("Warning: pyroaring not installed. Using standard sets for filtering (less efficient).")
-    BitMap = set # Fallback for testing without pyroaring
+    BitMap = set  # Fallback for testing without pyroaring
 
 
 class ApproxWordListV5b:
@@ -85,7 +92,7 @@ class ApproxWordListV5b:
         # Stores length of normalized word for each index
         self.__index_to_word_length: List[int] = []
         # Stores tuple of ngram counts (#grams for n1, #grams for n2, ...) for each index
-        self.__index_to_num_grams: List[Tuple[int,...]] = []
+        self.__index_to_num_grams: List[Tuple[int, ...]] = []
 
         # --- Filter Index ---
         # Maps a filter n-gram string to a Roaring Bitmap of word indices containing it
@@ -186,14 +193,14 @@ class ApproxWordListV5b:
 
         normalized_word = self._normalize_word(word)
         if not normalized_word:
-             raise ValueError(f"Word '{word[:50]}' became empty after normalization")
+            raise ValueError(f"Word '{word[:50]}' became empty after normalization")
         # Ensure no reserved padding characters are present
         if '\2' in normalized_word or '\3' in normalized_word:
-             raise ValueError("Word contains reserved control characters ('\\2', '\\3') after normalization")
+            raise ValueError("Word contains reserved control characters ('\\2', '\\3') after normalization")
 
         # Check if already present before resolving index
         if normalized_word in self.__word_to_index:
-            return self # Idempotent
+            return self  # Idempotent
 
         word_index = self._resolve_word_index(normalized_word, auto_add=True)
         # _resolve_word_index handles adding to core lists
@@ -210,7 +217,7 @@ class ApproxWordListV5b:
         for n_size in self.__n_list:
             n_grams_list = get_n_grams(normalized_word, n_size)
             num_n_grams = len(n_grams_list)
-            if num_n_grams == 0: continue # Skip if word is too short for this n
+            if num_n_grams == 0: continue  # Skip if word is too short for this n
 
             # Calculate locations for unique n-grams
             n_gram_locations = defaultdict(list)
@@ -220,7 +227,7 @@ class ApproxWordListV5b:
 
             # Add counts and position tuples to inverted indices
             for n_gram, locations_list in n_gram_locations.items():
-                locations_tuple = tuple(locations_list) # Store immutable tuple
+                locations_tuple = tuple(locations_list)  # Store immutable tuple
                 count = len(locations_tuple)
                 self.__ngram_counts_index[n_gram].append((word_index, count))
                 self.__ngram_positions_index[n_gram].append((word_index, locations_tuple))
@@ -242,7 +249,7 @@ class ApproxWordListV5b:
         3. Calculates lower-bound scores based on shared n-gram counts.
         4. Determines a threshold based on the k-th best lower-bound score.
         5. Filters remaining candidates based on an upper-bound score proxy.
-        6. Calculates the final approximate NMD score using emd_1d for the finalists.
+        6. Calculates the final approximate NMD score using emd_1d_dp for the finalists.
         7. Aggregates scores across different n-gram sizes.
 
         Args:
@@ -293,39 +300,39 @@ class ApproxWordListV5b:
                 # Store locations as {gram: (pos_tuple)}
                 query_locations[n_size] = {gram: tuple(pos) for gram, pos in query_loc_dict.items()}
             else:
-                 query_locations[n_size] = {} # Should not happen if num_grams > 0 check passed
+                query_locations[n_size] = {}  # Should not happen if num_grams > 0 check passed
 
         # === Section 2: Initial Bitmap Filtering ===
-        candidate_bitmap = BitMap() # Stores indices passing the filter
-        if self.__filter_n and query_filter_grams: # Ensure filter enabled and query usable
+        candidate_bitmap = BitMap()  # Stores indices passing the filter
+        if self.__filter_n and query_filter_grams:  # Ensure filter enabled and query usable
             for n_gram in query_filter_grams:
-                gram_bitmap = self.__ngram_filter_index.get(n_gram) # Look up n-gram in filter index
+                gram_bitmap = self.__ngram_filter_index.get(n_gram)  # Look up n-gram in filter index
                 if gram_bitmap:
-                    candidate_bitmap.update(gram_bitmap) # Efficient union
+                    candidate_bitmap.update(gram_bitmap)  # Efficient union
             # If no words share any filter n-grams, return early
             if not candidate_bitmap: return Counter()
         elif self.__filter_n and not query_filter_grams:
-             # Should have been caught earlier, but safety check
-             return Counter()
-        else: # No filter index enabled - consider all words
-            if self.__index_to_word: # Check if vocabulary exists
-                 # Create bitmap containing all valid word indices
-                 candidate_bitmap = BitMap(range(len(self.__index_to_word)))
+            # Should have been caught earlier, but safety check
+            return Counter()
+        else:  # No filter index enabled - consider all words
+            if self.__index_to_word:  # Check if vocabulary exists
+                # Create bitmap containing all valid word indices
+                candidate_bitmap = BitMap(range(len(self.__index_to_word)))
             else:
-                 return Counter() # No words in index
+                return Counter()  # No words in index
 
         # === Section 3: Bounds Calculation (Lower Bound Proxy) ===
         # Calculates a score based on min(query_count, candidate_count) for shared n-grams.
         # This serves as a proxy for the lower bound of the final similarity score.
         # min_scores_per_candidate: Maps word_index -> list_of_min_scores (one per n_size)
         min_scores_per_candidate: Dict[int, List[float]] = defaultdict(
-            lambda: self.__zeros_list_for_scores.copy() # Use preallocated list + copy
+            lambda: self.__zeros_list_for_scores.copy()  # Use preallocated list + copy
         )
         # Keep track of candidates actually encountered during count lookup
         candidate_indices_in_min_scores: Set[int] = set()
 
         for n_index, n_size in enumerate(self.__n_list):
-            if n_size not in query_counters: continue # Skip if query had no grams for this n
+            if n_size not in query_counters: continue  # Skip if query had no grams for this n
 
             query_num_grams_for_n = query_num_grams_tuple[n_index]
             query_counter_for_n = query_counters[n_size]
@@ -371,28 +378,28 @@ class ApproxWordListV5b:
 
         # Filter candidates further: keep only those whose *maximum* possible score
         # (estimated as 2 * min_score contribution) could possibly meet the threshold.
-        finalist_bitmap = BitMap() # Stores indices passing the bounds check
+        finalist_bitmap = BitMap()  # Stores indices passing the bounds check
         for word_index, lower_bound_scores in min_scores_per_candidate.items():
-             # The maximum contribution for an n-gram is 2 * min contribution
-             # This holds true even with normalization applied earlier
-             upper_bound_scores = [score * 2.0 for score in lower_bound_scores]
-             max_possible_score = mean(upper_bound_scores, dim=dim)
+            # The maximum contribution for an n-gram is 2 * min contribution
+            # This holds true even with normalization applied earlier
+            upper_bound_scores = [score * 2.0 for score in lower_bound_scores]
+            max_possible_score = mean(upper_bound_scores, dim=dim)
 
-             if max_possible_score >= min_acceptable_score_threshold:
-                 finalist_bitmap.add(word_index)
+            if max_possible_score >= min_acceptable_score_threshold:
+                finalist_bitmap.add(word_index)
 
         # If no candidates remain after bounds filtering, return early
         if not finalist_bitmap: return Counter()
 
         # === Section 5: Actual EMD Scoring ===
-        # Now calculate the actual approximate NMD score (using emd_1d) only for finalists.
+        # Now calculate the actual approximate NMD score (using emd_1d_dp) only for finalists.
         # actual_scores_per_candidate: Maps word_index -> list_of_actual_scores (one per n_size)
         actual_scores_per_candidate: Dict[int, List[float]] = defaultdict(
             lambda: self.__zeros_list_for_scores.copy()
         )
 
         for n_index, n_size in enumerate(self.__n_list):
-            if n_size not in query_locations: continue # Skip if query had no locations for this n
+            if n_size not in query_locations: continue  # Skip if query had no locations for this n
 
             query_num_grams_for_n = query_num_grams_tuple[n_index]
             query_locations_for_n = query_locations[n_size]
@@ -407,17 +414,18 @@ class ApproxWordListV5b:
                     # This candidate needs full scoring
                     # Calculate similarity contribution: num_matches - emd_cost
                     similarity_contribution = float(len(query_pos_tuple) + len(other_pos_tuple)) \
-                                              - emd_1d(query_pos_tuple, other_pos_tuple)
+                                              - emd_1d_dp(query_pos_tuple, other_pos_tuple)
 
                     # Normalize if required
                     if normalize:
-                         other_num_grams_for_n = self.__index_to_num_grams[other_word_index][n_index]
-                         denominator = query_num_grams_for_n + other_num_grams_for_n
-                         if denominator > 0:
-                             actual_scores_per_candidate[other_word_index][n_index] += similarity_contribution / denominator
-                         # else: score remains 0.0 for this n if denominator is 0
+                        other_num_grams_for_n = self.__index_to_num_grams[other_word_index][n_index]
+                        denominator = query_num_grams_for_n + other_num_grams_for_n
+                        if denominator > 0:
+                            actual_scores_per_candidate[other_word_index][
+                                n_index] += similarity_contribution / denominator
+                        # else: score remains 0.0 for this n if denominator is 0
                     else:
-                         actual_scores_per_candidate[other_word_index][n_index] += similarity_contribution
+                        actual_scores_per_candidate[other_word_index][n_index] += similarity_contribution
 
         # === Section 6: Final Score Aggregation ===
         # Combine scores across different n-sizes using the specified 'mean' function
@@ -426,7 +434,7 @@ class ApproxWordListV5b:
             for word_index, scores in actual_scores_per_candidate.items()
         })
 
-        return final_scores # Return Counter {word_index: final_approx_score}
+        return final_scores  # Return Counter {word_index: final_approx_score}
 
     # --- Public Lookup Method ---
     def lookup(self,
@@ -466,8 +474,8 @@ class ApproxWordListV5b:
             return []
         # Check for reserved chars again just in case normalization introduced them
         if '\2' in normalized_word or '\3' in normalized_word:
-             # Or raise ValueError("Query word contains reserved control characters after normalization")
-             return []
+            # Or raise ValueError("Query word contains reserved control characters after normalization")
+            return []
 
         # --- Perform Similarity Lookup ---
         # Calls the internal method which does the heavy lifting
@@ -489,6 +497,6 @@ class ApproxWordListV5b:
     def __contains__(self, word: str) -> bool:
         """Checks if a word exists in the index (after normalization)."""
         if not isinstance(word, str):
-             return False
+            return False
         normalized_word = self._normalize_word(word)
         return normalized_word in self.__word_to_index

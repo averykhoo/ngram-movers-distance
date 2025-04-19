@@ -5,12 +5,16 @@ if __name__ == '__main__':
 
     with open('pickles/awl5_ms.pkl', 'rb') as f:
         awl5_ms = pickle.load(f)
+    with open('pickles/awl5b_ms.pkl', 'rb') as f:
+        awl5b_ms = pickle.load(f)
     with open('pickles/awl6_ms.pkl', 'rb') as f:
         awl6_ms = pickle.load(f)
     with open('pickles/ws_ms.pkl', 'rb') as f:
         ws_ms = pickle.load(f)
     with open('pickles/awl5_en.pkl', 'rb') as f:
         awl5_en = pickle.load(f)
+    with open('pickles/awl5b_en.pkl', 'rb') as f:
+        awl5b_en = pickle.load(f)
     with open('pickles/awl6_en.pkl', 'rb') as f:
         awl6_en = pickle.load(f)
     with open('pickles/ws_en.pkl', 'rb') as f:
@@ -37,6 +41,12 @@ if __name__ == '__main__':
 
         t = time.perf_counter()
         print('awl5_ms', awl5_ms.lookup(word, normalize=True))
+        print(time.perf_counter() - t)
+        print()
+
+
+        t = time.perf_counter()
+        print('awl5b_ms', awl5b_ms.lookup(word, normalize=True))
         print(time.perf_counter() - t)
         print()
 
@@ -77,6 +87,11 @@ if __name__ == '__main__':
 
         t = time.perf_counter()
         print('awl5_en', awl5_en.lookup(word, normalize=True))
+        print(time.perf_counter() - t)
+        print()
+
+        t = time.perf_counter()
+        print('awl5b_en', awl5b_en.lookup(word, normalize=True))
         print(time.perf_counter() - t)
         print()
 

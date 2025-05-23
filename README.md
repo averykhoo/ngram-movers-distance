@@ -89,6 +89,24 @@ pytest
 
 For more details about the tests, see the [tests/README.md](tests/README.md) file.
 
+# Publishing to PyPI
+
+This package is automatically built and published to PyPI using [GitHub Actions](https://docs.github.com/en/actions). The workflow is triggered whenever a new release is created on GitHub, or it can be manually triggered from the "Actions" tab of the repository (`workflow_dispatch`).
+
+The publishing process now uses [OIDC trusted publishing](https://docs.pypi.org/trusted-publishers/), which provides a more secure way to authenticate with PyPI without needing to store API tokens as secrets. Additionally, the workflow generates [SLSA provenance attestations](https://slsa.dev/spec/v1.0/provenance), enhancing supply chain security by providing verifiable information about how the package was built.
+
+To create a new release (which will trigger the publishing workflow):
+
+1. Ensure your `nmd/__init__.py` file has the correct `__version__` number.
+2. Navigate to the [releases page](https://github.com/averykhoo/ngram-movers-distance/releases) of the GitHub repository.
+3. Click on "Draft a new release".
+4. Choose a tag for your release (e.g., `v0.1.2`). It's good practice to prefix your version number with `v`.
+5. Select the target branch (usually `main` or `master`).
+6. Enter a release title and description.
+7. Click "Publish release".
+
+The GitHub Actions workflow will then handle the build, attestation generation, and publishing to PyPI automatically.
+
 # todo
 
 * `from nmd import nmd` should return a function, not a module -> refactor this
@@ -148,4 +166,4 @@ def real_quick_ratio(self):
     * make sure `nmd/__init__.py` contains a docstring and version
 * publish / update
     * increment `__version__` in `nmd/__init__.py`
-    * `flit publish`
+    * Publishing is now handled by the GitHub Actions workflow when a new release is published or when manually triggered.

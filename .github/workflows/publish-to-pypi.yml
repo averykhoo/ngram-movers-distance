@@ -1,0 +1,81 @@
+name: Publish Python 🐍 distributions to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # Required for OIDC trusted publishing
+  contents: read # Required for actions/checkout
+  attestations: write # Required for generating SLSA attestations
+
+jobs:
+  build:
+    name: Build Python 🐍 distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install Flit
+        run: pip install flit
+
+      - name: Build package
+        run: flit build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  generate-attestations:
+    name: Generate SLSA attestations
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      id-token: write
+      contents: write # Optional: To push attestations to a new release
+      attestations: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      
+      - name: Generate SLSA attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "dist/*.whl" # Attest the wheel
+
+  publish-to-pypi:
+    name: Publish package to PyPI
+    needs: build # Could also depend on generate-attestations if strict ordering is required
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/nmd
+    permissions:
+      id-token: write # Required for OIDC trusted publishing
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # OIDC will be used automatically, no user/password needed
+        # The action defaults to publishing files from 'dist/'
+        # If your artifacts are in a different directory, specify `dist-dir`
+        # with:
+        #   dist-dir: path/to/your/distributions/

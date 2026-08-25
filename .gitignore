@@ -141,3 +141,6 @@ cython_debug/
 
 .idea/
 experiments/pickles/*.pkl
+
+# throwaway profiling/benchmark scripts, see .scratch/README.md
+.scratch/

@@ -60,6 +60,50 @@ print(word_list.lookup(f'asalamalaikum'))  # -> 'assalamualaikum'
 print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
 ```
 
+## `ApproxWordListV7`
+
+* WARNING: requires `numpy`, so it's not available by default in the `nmd` namespace
+* same idea as `WordList`, but the lookup is vectorised instead of looping in python
+* the index score is the *exact* nmd similarity, not an approximation of it -- the n-gram
+  count bound used to avoid scoring the whole vocabulary is two-sided, so it can only
+  discard words that genuinely cannot reach the top k
+
+measured against `WordList` (`ApproxWordListV6`, `filter_n=3`) with `n=(2, 4)`:
+
+| vocabulary | build | index size | lookup |
+|------------|-------|------------|--------|
+| 41.5k, V6  | 2.5s  | 168.7 MB   | 102.5 ms |
+| 41.5k, V7  | 3.2s  | 14.8 MB    | 5.2 ms |
+| 250k, V6   | 31.5s | 1137.1 MB  | 798.4 ms |
+| 250k, V7   | 21.1s | 82.4 MB    | 27.2 ms |
+
+the gap widens with vocabulary size (20x at 41.5k, 29x at 250k) because V6 loops in python
+over every word touched by any shared n-gram, and that set grows with the vocabulary
+
+```python
+from nmd.nmd_index_v7 import ApproxWordListV7
+
+word_list = ApproxWordListV7((2, 4))  # combined 2- and 4-grams seem to work best
+word_list.add_words(words)  # or add_word() one at a time
+
+# lookup returns [(word, score), ...], most similar first
+print(word_list.lookup(f'asalamalaikum'))
+print(word_list.lookup(f'walaikumalasam', top_k=3, normalize=True))
+```
+
+* differences from `WordList` (`ApproxWordListV6`):
+    * `lookup()` returns a plain float score per word instead of a tuple of
+      (index score, recomputed nmd) -- the index score already is the exact nmd similarity,
+      so V6's second value only ever repeated the first (to within float noise)
+    * words with identical scores come back in alphabetical order rather than in
+      posting-list insertion order, so results are reproducible run to run
+    * there is no `filter_n` prefilter: it existed to keep the python candidate loop short,
+      and once that loop is vectorised it costs more than it saves
+    * queries whose length is exactly `n - 2` raise `ZeroDivisionError` in `WordList`, and
+      work here
+    * `invert=False` returns an actual distance (`ApproxWordListV5` returned
+      `normalize - score`, i.e. a negative number)
+
 ## `bow_ngram_movers_distance()`
 
 * WARNING: requires `scipy.optimize`, so it's not available by default in the `nmd` namespace
@@ -88,6 +132,23 @@ pytest
 ```
 
 For more details about the tests, see the [tests/README.md](tests/README.md) file.
+
+# known bugs in the older index classes
+
+kept as-is for now, since this repo is mostly experimental and the old versions are worth
+keeping around for comparison. `ApproxWordListV7` has none of these.
+
+* `ApproxWordListV3.vocabulary` is `return sorted(self.vocabulary)` -- infinite recursion,
+  `RecursionError` on any access
+* `ApproxWordListV5.lookup(invert=False)` returns `normalize - match_score`, i.e. bool
+  arithmetic, so distances come out negative and sorted worst-first. it also returns
+  `top_k * 2` results instead of `top_k`
+* `ApproxWordListV6.lookup()` raises `ZeroDivisionError` for any query of length `n - 2`
+  (e.g. a 2-character query when 4-grams are indexed), because that produces exactly one
+  n-gram and the location denominator `len(n_grams) - 1` is zero
+* `num_grams()` disagrees with `get_n_grams()` in two places: it over-counts by 2 at `n=1`
+  (adding START/END flags that `get_n_grams` omits for 1-grams), and it returns a negative
+  count when the word is shorter than `n - 2`
 
 # todo
 

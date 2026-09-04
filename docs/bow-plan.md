@@ -560,8 +560,14 @@ over n; segment is a coordinate search on a stratified subsample (616 positives,
   0.660 for λ = 0 / 0.25 / 0.5 / 1.0), confirming Part 4.
 - ⚠ subsample AP is at 25% prevalence and is **not** comparable to the
   full-train AP figures elsewhere in this doc (10.7%).
-- ⚠ `max_len` and `min_sim` both selected the edge of their grids; the axes were
-  extended afterwards (see the session log).
+- `max_len` and `min_sim` both selected the edge of their grids, so both axes
+  were extended. Neither was hiding anything: `min_sim` peaks at 0.4-0.5 and
+  falls away after (subsample AP 0.7008 / 0.7014 / 0.6944 / 0.6602 / 0.6442 for
+  0.4 / 0.5 / 0.6 / 0.7 / 0.8), and `max_len` 4, 5 and 6 give **identical** AP
+  to four decimal places — segments longer than four tokens are never selected.
+  `min_sim=0.5` wins the search criterion by 0.0006 AP but scores 49.38 test F1
+  against 0.4's 49.90, i.e. the two are indistinguishable and the search has
+  saturated at ~50 F1.
 
 ### idf is worth 5-15x what the hyperparameters are worth
 

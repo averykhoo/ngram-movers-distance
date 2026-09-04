@@ -123,6 +123,24 @@ print(bow_ngram_movers_distance(bag_of_words_1=text_1.casefold().split(),
                                 ))
 ```
 
+## `segment_movers_distance()`
+
+* WARNING: requires `scipy.optimize` and `numpy`, so it's not available by default in the `nmd` namespace
+* like `bow_ngram_movers_distance` but tolerant of split / merged words (`["pineapple"]` matches `["pine", "apple"]`
+  perfectly) and optionally preferring in-order matches. reference implementation, not optimized.
+* see [docs/bow-plan.md](docs/bow-plan.md) for the design and an evaluation on product names
+
+```python
+from nmd.nmd_segments import align_segments, explain_alignment, segment_movers_distance
+
+a = 'sony black earbud style headphones mdrex55bk'.split()
+b = 'ex series earbuds black mdr ex55/blk'.split()
+print(segment_movers_distance(a, b, lam=0.0, min_sim=0.2, invert=True, normalize=True))
+
+# introspect the matching: which segments were paired, with what similarity and positional shift
+print(explain_alignment(a, b, align_segments(a, b, lam=0.0, min_sim=0.2)))
+```
+
 # Testing
 
 The project includes a test suite using pytest. To run the tests:
@@ -161,6 +179,7 @@ keeping around for comparison. `ApproxWordListV7` has none of these.
     * matching long strings with many n-grams
     * matching strings with significantly different lengths
 * rename nmd_bow because it isn't really a bag-of-words, it's a token sequence
+* index for nmd_bow, and split/merge-tolerant token matching: see [docs/bow-plan.md](docs/bow-plan.md)
 * consider a `real_quick_ratio`-like optimization, or maybe calculate length bounds?
     * needs a cutoff to actually speed up though, makes a huge difference for difflib
     * a sufficiently low cutoff is not unreasonable, although the default of 0.6 might be a little high for nmd

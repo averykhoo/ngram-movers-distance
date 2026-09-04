@@ -508,6 +508,113 @@ DeepMatcher+ 62.8, Ditto 89.33.
 - Caveats: 100 queries is ±0.04 on each hit@1; names only, no description or
   price; the ER-Magellan threshold is tuned on train, so it is not unsupervised.
 
+## Part 6 — hyperparameter search, and why nmd trails jaccard
+
+Measured 2026-09-04, ER-Magellan Abt-Buy split, `name` only. Scripts:
+`experiments/position_penalty.py`, `experiments/hyperparam_search.py`,
+`experiments/idf_variants.py`.
+
+### nmd is jaccard *minus* an order allowance, not plus one
+
+A set has no order, so jaccard is already fully order-invariant; nmd charges for
+displacement on top of the same n-gram overlap. Dropping nmd's position term
+leaves `2·|A n B|_multiset / (|A| + |B|)` — Dice over n-gram multisets — and Dice
+is a monotone transform of Jaccard (`J = D / (2 - D)`), so the two are
+rank-equivalent. `position_penalty.py` confirms this: `jaccard set n=k` and
+`dice set n=k` produce identical AP and F1 at every n, and `nmd <= dice-multiset`
+in 15/15 checks. Hence
+
+    normalized nmd  =  jaccard-family overlap  -  positional discount  -  (set -> multiset)
+
+Train AP at n=2 splits the gap almost evenly: jaccard/dice set 0.484 ->
+dice multiset 0.464 (counting occurrences rather than types) -> nmd 0.441 (the
+positional discount). The discount removes 7.2% of the score on true matches but
+only 6.7% on non-matches, so it shaves the wrong side harder: separation drops
+from 0.166 to 0.152. `sony camera dsc123` vs `dsc123 sony camera` — identical
+content, reordered — loses a quarter of its score (dice 0.722, nmd 0.541).
+
+At λ=0 with merges allowed, the segment metric scores 46.68 against
+dice-multiset-n=2's 46.56: it buys back almost exactly what the position penalty
+took, landing on the unweighted-overlap ceiling. The design works; the ceiling is
+the problem.
+
+### The search buys ~3 F1
+
+`hyperparam_search.py`, ranked by train AP (threshold-free, so the test set is
+untouched), then threshold-tuned test F1. char-nmd and bow-nmd are exhaustive
+over n; segment is a coordinate search on a stratified subsample (616 positives,
+3x negatives), which is not exhaustive and can miss parameter interactions.
+
+| family   | tuned config                                    | before | after |
+|----------|-------------------------------------------------|-------:|------:|
+| char-nmd | `n=(2,)` — already the default, 14 combos tried  |  43.68 | 43.68 |
+| bow-nmd  | `n=4` (train AP 0.4224 vs 0.3847 for n=2)        |  42.73 | 42.61 |
+| segment  | `n=(3,4) L=4 λ=0 μ=0.5 mass=ngrams min_sim=0.4`   |  46.68 | 49.90 |
+
+- **n does not want tuning at the character level.** char-nmd is monotone
+  decreasing in n (AP 0.437 / 0.434 / 0.421 / 0.397 for n = 2/3/4/5) and no
+  multi-n combination beats plain n=2. `n=1` is unavailable anyway
+  (`nmd/nmd_core.py:34`).
+- **bow-nmd's tuning did not transfer**: +0.038 train AP, −0.12 test F1.
+- **λ hurts monotonically** on this data (subsample AP 0.691 / 0.684 / 0.677 /
+  0.660 for λ = 0 / 0.25 / 0.5 / 1.0), confirming Part 4.
+- ⚠ subsample AP is at 25% prevalence and is **not** comparable to the
+  full-train AP figures elsewhere in this doc (10.7%).
+- ⚠ `max_len` and `min_sim` both selected the edge of their grids; the axes were
+  extended afterwards (see the session log).
+
+### idf is worth 5-15x what the hyperparameters are worth
+
+Weighting is structurally free: `nmd_core.py:64-68` accumulates similarity per
+n-gram *type* independently and idf is constant within a type, so `w(g)` is a
+scalar multiplier on that type's contribution. `emd_1d_dp` is untouched, no
+matching decision changes, non-negative weights keep it a metric, and the
+`similarity + distance == total` identity holds with `total = Σ w(g)·count(g)`.
+`df(g)` is already in the index as `len(postings[g])`.
+
+Char 2-grams, train AP / test F1:
+
+| variant                        | train AP | test F1 |
+|--------------------------------|---------:|--------:|
+| nmd                            |    0.441 |   43.46 |
+| nmd + idf                      |    0.588 |   53.62 |
+| nmd + geometric normalization  |    0.450 |   43.75 |
+| nmd + idf + geometric norm     |    0.596 |   54.01 |
+| nmd + idf² + geometric norm    |    0.685 |   60.72 |
+| cosine log-tf + idf (baseline) |    0.754 |   65.19 |
+
+Note that tf-idf **cosine** puts `w(g)²` in the numerator for a shared gram, so
+"idf in a cosine" and "idf in a Dice-shaped measure" are different weightings —
+most of what looks like a normalization advantage is the squared weight.
+Normalization alone is worth +0.012 AP; the exponent is worth +0.10.
+
+### ⚠ but the exponent does not peak, and that is a finding about the dataset
+
+Sweeping `w(g) = idf(g)^p` at n=3, train AP climbs monotonically to p≈15-25
+(AP 0.827, test F1 74.76) — past every baseline including tf-idf cosine. As
+p → ∞ the score is decided by the single rarest shared n-gram, and that limit
+measured on its own ("max idf among shared 3-grams, over the rarest gram
+available") scores **AP 0.746 / F1 73.66 with no mover's distance at all**.
+46% of 3-gram types in this corpus contain a digit.
+
+So Abt-Buy is substantially a model-number matching benchmark, and a large idf
+exponent is a roundabout rare-substring detector. nmd at p=15 (AP 0.827) does
+beat the pure rare-gram rule (0.746), so the overlap structure adds real signal —
+but tuning p here optimizes for model numbers and should not be expected to
+transfer to company names or addresses.
+
+**Recommendation: ship `weights` with a default of `p=2`** (captures +0.24 AP /
++17 F1, stays a smooth general-purpose metric) rather than a benchmark-tuned p.
+Watch punctuation: the rarest 3-grams here are `') ,'`, `'v ,'`, `'t :'` —
+formatting noise, which p=15 amplifies about a millionfold. Normalize
+punctuation before gramming, floor the idf, or take `df` from a corpus larger
+than the thing being matched.
+
+For the segment metric, `mass(token) = Σ_g w(g)` over the token's n-grams; every
+Part 2/4 invariant is linear in mass so segmentation-invariance and
+`similarity + distance == total` carry over, but `test_split_merge_is_perfect`
+must be re-run because merge-boundary n-grams now carry unequal weights.
+
 ### Prior art to check before implementing
 
 - Word Mover's Distance retrieval (Kusner et al. 2015): WCD/RWMD bounds,

@@ -1,6 +1,7 @@
 """
 split into a separate file because this needs `pyroaring` and `regex`
 """
+import math
 import time
 from collections import defaultdict
 from collections.abc import MutableSet
@@ -72,7 +73,8 @@ class WordSet(MutableSet[str]):
                  *,  # Force keyword-only arguments
                  case_sensitive: bool = False,
                  unicode_normalizer: UnicodeNormalizer = normalize_nfc,
-                 ngram_sizes: Union[int, Iterable[int]] = (2, 3, 4)
+                 ngram_sizes: Union[int, Iterable[int]] = (2, 3, 4),
+                 idf_exponent: float = 0.0
                  ) -> None:
         """
         Initializes the WordSet and its matching configuration.
@@ -88,6 +90,18 @@ class WordSet(MutableSet[str]):
                Smaller values (e.g., 2) focus on local similarity/typos.
                Larger values (e.g., 4) focus on word structure.
                Using multiple sizes like `(2, 4)` (default) combines these.
+            idf_exponent: Weight each n-gram by `idf(gram) ** idf_exponent`, where
+               `idf(gram) = log(len(self) / document_frequency(gram))`. Rare n-grams then
+               count for more than common ones. Defaults to 0.0, which makes every weight
+               exactly 1.0 and reproduces the unweighted score bit-for-bit.
+
+               Whether this helps is entirely domain-dependent, and the two obvious domains
+               pull in opposite directions (measured in docs/bow-plan.md parts 6-7):
+               matching product names, where a rare n-gram is usually the model number,
+               gains ~+10 F1 at exponent 1.0 and ~+17 at 2.0; correcting typos, where a rare
+               n-gram is usually the typo itself, is flat at 1.0 and loses ~8 points of
+               hit@1 at 2.0. Values above ~2 degrade ranking badly on both: the score ends
+               up decided by whichever rare n-gram happens to be shared.
         """
         # --- Validate and Store Configuration ---
         if not isinstance(case_sensitive, bool):
@@ -121,6 +135,16 @@ class WordSet(MutableSet[str]):
             min_n = self._n_list[0]  # Smallest n-gram size specified
             self._effective_filter_n = min_n if min_n <= 4 else None  # Only use filter if small n exists
 
+        if isinstance(idf_exponent, bool) or not isinstance(idf_exponent, (int, float)):
+            raise TypeError("idf_exponent must be a number")
+        if idf_exponent < 0:
+            raise ValueError("idf_exponent must be non-negative; a negative exponent would up-weight "
+                             "the most common n-grams")
+        self._idf_exponent: Final[float] = float(idf_exponent)
+        # exponent 0 means every weight is exactly 1.0, so the unweighted code path is kept verbatim
+        # rather than multiplied through by 1.0 -- that keeps the default identical and free
+        self._weighted: Final[bool] = self._idf_exponent != 0.0
+
         # --- Internal State Initialization ---
         self._vocab_normalized_to_id: Dict[str, int] = {}  # Normalized -> ID
         self._vocab_id_to_original: Dict[int, str] = {}  # ID -> Original word
@@ -128,6 +152,15 @@ class WordSet(MutableSet[str]):
         # Store precomputed info needed for lookup per word ID
         self._word_info: Dict[
             int, Dict] = {}  # ID -> {'norm_len': int, 'num_grams': Tuple[int,...], 'ngrams_pos': Dict[str, Tuple[float,...]], 'filter_grams': Set[str]}
+
+        # --- idf state, maintained incrementally ---
+        # document frequency per n-gram, updated one word at a time by add() / discard(), never rebuilt.
+        # idf therefore shifts on every mutation, so anything derived from it (gram weights, per-word
+        # weighted totals) is tagged with the generation it was computed at and recomputed lazily.
+        self._document_frequency: Dict[str, int] = {}
+        self._generation: int = 0
+        self._weight_cache: Dict[str, float] = {}
+        self._weight_cache_generation: int = -1
         # Filter index using RoaringBitmaps
         self._filter_index: Dict[str, BitMap] = {}  # filter-n-gram -> RoaringBitmap{word_id}
 
@@ -231,6 +264,12 @@ class WordSet(MutableSet[str]):
                     self._filter_index[gram] = BitMap()  # Changed RoaringBitmap -> BitMap
                 self._filter_index[gram].add(word_id)
 
+        # document frequency counts each n-gram once per word, so the keys of ngrams_pos are exactly
+        # the grams whose df this word contributes to (across every n in _n_list)
+        for gram in cast(Dict[str, Tuple[float, ...]], info['ngrams_pos']):
+            self._document_frequency[gram] = self._document_frequency.get(gram, 0) + 1
+        self._generation += 1
+
     def discard(self, word: str) -> None:
         """
         Removes a word if present (based on normalized form), otherwise does nothing.
@@ -257,6 +296,15 @@ class WordSet(MutableSet[str]):
                     bitmap.discard(word_id)  # Use discard for safety
                     if not bitmap:  # If bitmap becomes empty, remove key
                         del self._filter_index[gram]
+
+        # mirror of the increment in add(): drop this word's contribution to every gram's df
+        for gram in cast(Dict[str, Tuple[float, ...]], info['ngrams_pos']):
+            remaining = self._document_frequency.get(gram, 0) - 1
+            if remaining > 0:
+                self._document_frequency[gram] = remaining
+            else:
+                self._document_frequency.pop(gram, None)
+        self._generation += 1
 
     def __contains__(self, word: object) -> bool:
         """Checks for exact (normalized) membership using 'in'."""
@@ -294,6 +342,64 @@ class WordSet(MutableSet[str]):
         self._word_info.clear()
         self._filter_index.clear()
         self._word_id_counter = 0
+        self._document_frequency.clear()
+        self._generation += 1
+
+    # --- idf weighting ---
+
+    @property
+    def idf_exponent(self) -> float:
+        """The configured idf exponent; 0.0 means unweighted."""
+        return self._idf_exponent
+
+    def document_frequency(self, gram: str) -> int:
+        """How many words in the set contain `gram`. Maintained incrementally, never rebuilt."""
+        return self._document_frequency.get(gram, 0)
+
+    def _gram_weights(self) -> Dict[str, float]:
+        """
+        idf(gram) ** idf_exponent for every gram currently indexed, recomputed only when the set has
+        changed since the last call. Grams absent from the set are handled by _gram_weight().
+
+        idf is log((N + 1) / df) rather than the textbook log(N / df). The shift matters: an n-gram
+        present in every word has df == N and would otherwise take weight exactly 0, so a set whose
+        words all share their n-grams (in the limit, a set of one word) would give every candidate a
+        zero denominator and return nothing at all.
+        """
+        if self._weight_cache_generation != self._generation:
+            num_words = len(self._vocab_normalized_to_id)
+            self._weight_cache = {gram: math.log((num_words + 1) / df) ** self._idf_exponent
+                                  for gram, df in self._document_frequency.items()}
+            self._weight_cache_generation = self._generation
+        return self._weight_cache
+
+    def _gram_weight(self, gram: str, weights: Dict[str, float]) -> float:
+        """
+        Weight of a single gram. A gram in the query but not in the set has df 0; it can never be
+        shared, so it only ever appears in the query's own normalization, where it takes the
+        maximum weight (the value df == 1 would give).
+        """
+        weight = weights.get(gram)
+        if weight is not None:
+            return weight
+        return math.log(len(self._vocab_normalized_to_id) + 1) ** self._idf_exponent
+
+    def _weighted_total(self, ngrams_pos: Dict[str, Tuple[float, ...]], weights: Dict[str, float]) -> float:
+        """Weighted n-gram count of one word: the unweighted sum(num_grams) when every weight is 1."""
+        return sum(self._gram_weight(gram, weights) * len(positions) for gram, positions in ngrams_pos.items())
+
+    def _cached_weighted_total(self, word_info: Dict, weights: Dict[str, float]) -> float:
+        """
+        _weighted_total for an indexed word, memoized on the word itself. every idf shifts whenever
+        the set is mutated, so the cached value is tagged with the generation it was computed at and
+        recomputed when that is stale -- which makes the usual build-once-then-query pattern pay for
+        this only on the first lookup.
+        """
+        if word_info.get('weighted_total_generation') != self._generation:
+            word_info['weighted_total'] = self._weighted_total(
+                cast(Dict[str, Tuple[float, ...]], word_info['ngrams_pos']), weights)
+            word_info['weighted_total_generation'] = self._generation
+        return cast(float, word_info['weighted_total'])
 
     # --- Fuzzy Lookup Methods ---
 
@@ -364,6 +470,11 @@ class WordSet(MutableSet[str]):
         query_num_grams = cast(Tuple[int, ...], query_info['num_grams'])
         candidate_approx_scores: List[Tuple[float, int]] = []  # (negative_approx_score, word_id)
 
+        # None keeps the original unweighted arithmetic verbatim, so idf_exponent == 0 is not merely
+        # equivalent to the old behaviour but literally the same code
+        weights = self._gram_weights() if self._weighted else None
+        query_weighted_total = self._weighted_total(query_ngrams_pos, weights) if weights is not None else 0.0
+
         for word_id in target_ids:
             word_info = self._word_info[word_id]
             word_ngrams_pos = cast(Dict[str, Tuple[float, ...]], word_info['ngrams_pos'])
@@ -389,16 +500,29 @@ class WordSet(MutableSet[str]):
                 # and normalize at the end. This implicitly weights by n-gram frequency.
 
             # Calculate total similarity contribution across all Ns
-            for gram in iter_keys:
-                if gram in check_dict:  # Found a common gram
-                    q_pos = query_ngrams_pos[gram]
-                    w_pos = word_ngrams_pos[gram]
-                    # Similarity = total possible matches - EMD cost
-                    # Need emd_1d here. Assumes it's imported.
-                    total_similarity_contribution += len(q_pos) + len(w_pos) - emd_1d_dp(q_pos, w_pos)
+            if weights is None:
+                for gram in iter_keys:
+                    if gram in check_dict:  # Found a common gram
+                        q_pos = query_ngrams_pos[gram]
+                        w_pos = word_ngrams_pos[gram]
+                        # Similarity = total possible matches - EMD cost
+                        # Need emd_1d here. Assumes it's imported.
+                        total_similarity_contribution += len(q_pos) + len(w_pos) - emd_1d_dp(q_pos, w_pos)
+            else:
+                # idf is constant within an n-gram type and the EMD is computed per type, so the
+                # weight is a scalar multiplier -- no matching decision changes, only the aggregation
+                for gram in iter_keys:
+                    if gram in check_dict:
+                        q_pos = query_ngrams_pos[gram]
+                        w_pos = word_ngrams_pos[gram]
+                        total_similarity_contribution += self._gram_weight(gram, weights) * (
+                                len(q_pos) + len(w_pos) - emd_1d_dp(q_pos, w_pos))
 
             # Calculate total normalization factor across all Ns
-            total_normalization_factor = sum(query_num_grams) + sum(word_num_grams)
+            if weights is None:
+                total_normalization_factor = sum(query_num_grams) + sum(word_num_grams)
+            else:
+                total_normalization_factor = query_weighted_total + self._cached_weighted_total(word_info, weights)
 
             if total_normalization_factor > 0:
                 # Ensure score is between 0 and 1 (due to EMD properties)

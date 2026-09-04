@@ -432,6 +432,82 @@ Runtime is the reference implementation's: ~0.1 s per pair with all segment
 sims computed from scratch; Part 1's vocabulary index is what makes it usable
 at corpus scale.
 
+## Part 5 — how it compares to standard methods
+
+Measured 2026-09-04. Scripts: `experiments/baseline_eval.py`,
+`experiments/er_magellan_eval.py`. Every baseline is implemented inside
+`baseline_eval.py` (no new dependencies). Names only, in both experiments.
+
+### Retrieval: rank the Buy catalogue given an Abt name
+
+100 queries sampled with `seed=0`, all 1092 Buy names, no prefilter.
+
+| metric                     | hit@1 |   MRR | recall@20 |  sec |
+|----------------------------|------:|------:|----------:|-----:|
+| tf-idf cosine, char 3-gram | 0.890 | 0.930 |     1.000 |  0.4 |
+| soft tf-idf (JW, θ=0.9)    | 0.840 | 0.899 |     1.000 | 15.7 |
+| jaccard, char 3-gram       | 0.770 | 0.835 |     0.990 |  0.3 |
+| monge-elkan (JW)           | 0.750 | 0.829 |     1.000 | 36.7 |
+| tf-idf cosine, token       | 0.700 | 0.776 |     0.960 |  0.1 |
+| `char-nmd(2)`              | 0.690 | 0.785 |     0.990 |  9.8 |
+| jaccard, token             | 0.630 | 0.738 |     0.960 |  0.1 |
+| difflib ratio              | 0.500 | 0.606 |     0.820 | 17.9 |
+
+Reranking the top-20 of a *neutral* tf-idf char-3gram prefilter (true match
+present for 100/100), so every metric sees identical candidates:
+
+| metric                     | hit@1 |   MRR |  sec |
+|----------------------------|------:|------:|-----:|
+| tf-idf cosine, char 3-gram | 0.890 | 0.930 |  0.0 |
+| soft tf-idf (JW, θ=0.9)    | 0.830 | 0.895 |  0.1 |
+| `segment L3 λ=0 min_sim.2` | 0.760 | 0.840 | 14.1 |
+| monge-elkan (JW)           | 0.760 | 0.841 |  0.6 |
+| `bow-nmd(2)`               | 0.720 | 0.795 |  1.5 |
+| `char-nmd(2)`              | 0.690 | 0.785 |  0.3 |
+
+### Classification: the published ER-Magellan Abt-Buy split
+
+5743 train / 1916 test blocked pairs (616 / 206 positive), from the Ditto repo.
+Each metric becomes one global threshold tuned on train, applied to test — a far
+weaker learner than the published systems, which are supervised over every
+attribute. Test F1 ×100:
+
+| metric                     | F1    | prec  | rec   |
+|----------------------------|------:|------:|------:|
+| tf-idf cosine, char 3-gram | 64.88 | 72.46 | 58.74 |
+| soft tf-idf (JW, θ=0.9)    | 62.39 | 55.73 | 70.87 |
+| jaccard, char 3-gram       | 46.82 | 40.57 | 55.34 |
+| `segment L3 λ=0 min_sim.2` | 46.68 | 44.16 | 49.51 |
+| `segment L3 λ=0`           | 46.53 | 43.15 | 50.49 |
+| monge-elkan (JW)           | 44.29 | 34.12 | 63.11 |
+| `char-nmd(2,4)`            | 44.25 | 40.65 | 48.54 |
+| `char-nmd(2)`              | 43.68 | 41.48 | 46.12 |
+| `bow-nmd(2)`               | 42.73 | 40.17 | 45.63 |
+| jaccard, token             | 41.86 | 34.84 | 52.43 |
+
+Published on this split (supervised, all attributes): Magellan 43.6,
+DeepMatcher+ 62.8, Ditto 89.33.
+
+### What this says
+
+- **The segment work does what it was built to do.** Within the nmd family the
+  ordering is consistent across both experiments: `char-nmd` → `bow-nmd` →
+  `segment`, +4 to +7 points of hit@1 and +4 F1 over `bow-nmd`. The alignment
+  machinery is not the weak part.
+- **The representation is the weak part: no IDF.** Every method above the
+  segment metric is idf-weighted; every method below it is not. Jaccard vs
+  tf-idf over the *same* char-3gram feature set is +12 hit@1 and +18 F1 — the
+  largest single effect in either table. NMD gives every n-gram equal mass, so
+  it spends most of its budget matching `digital`, `camera`, `black`, `series`.
+  `_pair_gain` already carries a per-token mass, so `mass *= idf(gram)` is the
+  obvious next experiment, and it is orthogonal to Parts 1–4.
+- **A plain tf-idf char-3gram cosine beats all of this**, at 0.890 hit@1 and
+  ~400× faster than the segment ILP; at 64.88 F1 it also beats DeepMatcher+
+  using one threshold and one attribute. Anything built here has to clear that
+  bar to be worth its cost.
+- Caveats: 100 queries is ±0.04 on each hit@1; names only, no description or
+  price; the ER-Magellan threshold is tuned on train, so it is not unsupervised.
+
 ### Prior art to check before implementing
 
 - Word Mover's Distance retrieval (Kusner et al. 2015): WCD/RWMD bounds,

@@ -32,6 +32,7 @@ in [min(c1, c2), 2 * min(c1, c2)], so summed min-counts bracket the true score a
 bound can only discard words that genuinely cannot reach the top k -- `lookup` returns the
 same scores an exhaustive scan would (see tests/test_index_v7.py).
 """
+import math
 from typing import Dict
 from typing import Iterable
 from typing import Iterator
@@ -111,10 +112,27 @@ class ApproxWordListV7:
     def __init__(self,
                  n: Union[int, Iterable[int]] = (2, 4),
                  case_sensitive: bool = False,
+                 idf_exponent: float = 0.0,
                  ):
         """
         :param n: n-gram size(s) to index; combined 2- and 4-grams seem to work best
         :param case_sensitive: if false (the default) words are casefolded on the way in
+        :param idf_exponent: weight each n-gram by `idf(n_gram) ** idf_exponent`, where
+            `idf(g) = log((len(self) + 1) / document_frequency(g))`, so that rare n-grams count
+            for more than common ones. defaults to 0.0, which makes every weight exactly 1.0 and
+            keeps the unweighted code path, bit-for-bit.
+
+            idf is a scalar per n-gram type and the emd is computed per type, so weighting cannot
+            change any matching decision -- only the aggregation. the two-sided count bound that
+            drives pruning stays valid for the same reason: a shared n-gram's contribution is in
+            [w * min(c1, c2), 2 * w * min(c1, c2)] for any non-negative w.
+
+            whether it helps is domain-dependent, and the two obvious domains disagree (measured
+            in docs/bow-plan.md parts 6-7). matching product names, where a rare n-gram is usually
+            the model number, gains ~+10 F1 at 1.0 and ~+17 at 2.0. correcting typos, where a rare
+            n-gram is usually the typo itself, is flat at 1.0 and loses ~8 points of hit@1 at 2.0.
+            above ~2 ranking degrades on both: the score ends up decided by whichever rare n-gram
+            happens to be shared.
         """
         if isinstance(n, int):
             if n < 1:
@@ -132,6 +150,13 @@ class ApproxWordListV7:
         if not isinstance(case_sensitive, (bool, int)):
             raise TypeError(case_sensitive)
         self._case_insensitive = not case_sensitive
+
+        if isinstance(idf_exponent, bool) or not isinstance(idf_exponent, (int, float)):
+            raise TypeError(idf_exponent)
+        if idf_exponent < 0:
+            raise ValueError(idf_exponent)  # a negative exponent would up-weight the commonest n-grams
+        self._idf_exponent = float(idf_exponent)
+        self._weighted = self._idf_exponent != 0.0
 
         # vocabulary: word <-> word_index
         self._word_indices: Dict[str, int] = dict()
@@ -156,6 +181,13 @@ class ApproxWordListV7:
 
         self._frozen = True
         self._num_grams_by_word: List[np.ndarray] = [np.empty(0, dtype=np.float64) for _ in self._n_list]
+
+        # idf state. document frequency needs no storage of its own: `_words[n_idx][n_gram]` already
+        # holds every word index containing that n-gram, so `df == len(that array)`. both the weights
+        # and the per-word weighted totals are derived in `_freeze`, because adding a word changes
+        # the vocabulary size and hence every idf, not just the ones it touched
+        self._gram_weights: List[Dict[str, float]] = [dict() for _ in self._n_list]
+        self._weighted_total_by_word: List[np.ndarray] = [np.empty(0, dtype=np.float64) for _ in self._n_list]
 
     # ------------------------------------------------------------------ container protocol
 
@@ -300,7 +332,59 @@ class ApproxWordListV7:
                         dtype=np.float64, count=vocab_size)
             for n in self._n_list
         ]
+        if self._weighted:
+            self._rebuild_weights(vocab_size)
         self._frozen = True
+
+    def _rebuild_weights(self, vocab_size: int) -> None:
+        """
+        recompute every n-gram weight and every per-word weighted total
+
+        unlike the rest of `_freeze` this cannot be limited to the n-grams that were touched:
+        idf has the vocabulary size in it, so adding a single word moves every weight. that makes
+        a weighted freeze O(postings) rather than O(V), which is another reason to bulk-load with
+        `add_words` instead of interleaving writes and lookups.
+        """
+        for n_idx in range(len(self._n_list)):
+            words_by_gram = self._words[n_idx]
+            locs_by_gram = self._locs[n_idx]
+            multi = self._multi[n_idx]
+
+            # idf is log((V + 1) / df), not the textbook log(V / df): an n-gram present in every
+            # word would otherwise weigh exactly 0, so a vocabulary whose words all share their
+            # n-grams would give every candidate a zero denominator and score nothing at all
+            weights = {n_gram: math.log((vocab_size + 1) / word_idxs.size) ** self._idf_exponent
+                       for n_gram, word_idxs in words_by_gram.items() if word_idxs.size}
+            self._gram_weights[n_idx] = weights
+
+            totals = np.zeros(vocab_size, dtype=np.float64)
+            for n_gram, word_idxs in words_by_gram.items():
+                weight = weights.get(n_gram)
+                if not weight:
+                    continue
+                locs = locs_by_gram.get(n_gram)
+                num_single = locs.size if locs is not None else 0
+                if num_single:
+                    np.add.at(totals, word_idxs[:num_single], weight)
+                for other_word_index, other_locs in multi.get(n_gram, ()):
+                    totals[other_word_index] += weight * len(other_locs)
+            self._weighted_total_by_word[n_idx] = totals
+
+    def _gram_weight(self, n_idx: int, n_gram: str) -> float:
+        """
+        weight of one n-gram; an n-gram absent from the index has df 0, and can only ever appear
+        in the query's own normalization, where it takes the weight df == 1 would give
+        """
+        weight = self._gram_weights[n_idx].get(n_gram)
+        if weight is not None:
+            return weight
+        return math.log(len(self._word_list) + 1) ** self._idf_exponent
+
+    def _query_total(self, n_idx: int, query_grams: List[str], query_num_grams: int) -> float:
+        """the query side of the denominator: sum of w(g) over its n-grams, counting repeats"""
+        if not self._weighted:
+            return query_num_grams
+        return sum(self._gram_weight(n_idx, n_gram) for n_gram in query_grams)
 
     # ------------------------------------------------------------------ reads
 
@@ -323,6 +407,9 @@ class ApproxWordListV7:
         num_n = len(self._n_list)
         query_num_grams = [num_n_grams(len(word), n) for n in self._n_list]
         query_grams = [n_grams(word, n) for n in self._n_list]
+        # the query side of the denominator; identical to query_num_grams when unweighted
+        query_totals = [self._query_total(n_idx, query_grams[n_idx], query_num_grams[n_idx])
+                        for n_idx in range(num_n)]
 
         # --- pass 1: cheap lower bound on similarity, from n-gram counts alone -------------
         # for a word sharing an n-gram with counts (c1, c2), similarity is in
@@ -336,22 +423,34 @@ class ApproxWordListV7:
             for n_gram in query_grams[n_idx]:
                 query_counts[n_gram] = query_counts.get(n_gram, 0) + 1
 
-            chunks = [words_by_gram[n_gram] for n_gram in query_counts if n_gram in words_by_gram]
+            matched = [n_gram for n_gram in query_counts if n_gram in words_by_gram]
+            chunks = [words_by_gram[n_gram] for n_gram in matched]
             if not chunks:
                 counts.append(np.zeros(vocab_size, dtype=np.float64))
                 continue
 
-            bincount = np.bincount(np.concatenate(chunks), minlength=vocab_size).astype(np.float64)
+            if self._weighted:
+                # every posting of an n-gram carries that n-gram's weight, so a weighted bincount
+                # is the same min-count bound with w(g) folded in. it stays two-sided, because
+                # scaling each term by a non-negative constant scales both ends of its range
+                posting_weights = np.concatenate(
+                    [np.full(words_by_gram[n_gram].size, self._gram_weight(n_idx, n_gram))
+                     for n_gram in matched])
+                bincount = np.bincount(np.concatenate(chunks), weights=posting_weights,
+                                       minlength=vocab_size)
+            else:
+                bincount = np.bincount(np.concatenate(chunks), minlength=vocab_size).astype(np.float64)
             # bincount credited every posting with 1; correct the few that should count more
             for n_gram, query_count in query_counts.items():
                 if query_count > 1:
+                    weight = self._gram_weight(n_idx, n_gram) if self._weighted else 1.0
                     for other_word_index, other_locs in multi.get(n_gram, ()):
                         other_count = len(other_locs)
-                        bincount[other_word_index] += min(query_count, other_count) - 1
+                        bincount[other_word_index] += weight * (min(query_count, other_count) - 1)
             counts.append(bincount)
 
         if normalize:
-            bound_parts = [counts[n_idx] / self._denominator(n_idx, query_num_grams[n_idx])
+            bound_parts = [counts[n_idx] / self._denominator(n_idx, query_totals[n_idx])
                            for n_idx in range(num_n)]
         else:
             bound_parts = counts
@@ -392,6 +491,8 @@ class ApproxWordListV7:
                     continue
                 other_locs_arr = locs_by_gram[n_gram]
                 n_single = other_locs_arr.size
+                # a scalar multiplier on this n-gram type's whole contribution
+                weight = self._gram_weight(n_idx, n_gram) if self._weighted else 1.0
 
                 if len(locations) == 1:
                     # 1-vs-1 emd is just abs(x - y) (positions are in [0, 1]), so the
@@ -400,14 +501,14 @@ class ApproxWordListV7:
                     # index is a well-defined scatter-add
                     if n_single:
                         single_idxs = word_idxs[:n_single]
-                        score[single_idxs] += 2.0 - np.abs(other_locs_arr - locations[0])
+                        score[single_idxs] += weight * (2.0 - np.abs(other_locs_arr - locations[0]))
 
                     # 1-vs-m emd is min(min_dist, 2) + (m - 1), so the contribution
                     # 1 + m - emd collapses to 2 - min(min_dist, 2), independent of m
                     location = locations[0]
                     for other_word_index, other_locs in multi.get(n_gram, ()):
                         min_dist = min(abs(location - y) for y in other_locs)
-                        score[other_word_index] += 2.0 - (min_dist if min_dist < 2.0 else 2.0)
+                        score[other_word_index] += weight * (2.0 - (min_dist if min_dist < 2.0 else 2.0))
                 else:
                     # the query n-gram repeats: same collapse with the roles swapped
                     n_locations = len(locations)
@@ -415,28 +516,29 @@ class ApproxWordListV7:
                         single_idxs = word_idxs[:n_single]
                         min_dist = np.abs(other_locs_arr[:, None] - np.asarray(locations)).min(axis=1)
                         np.minimum(min_dist, 2.0, out=min_dist)
-                        score[single_idxs] += 2.0 - min_dist
+                        score[single_idxs] += weight * (2.0 - min_dist)
 
                     # both sides repeat: rare enough to fall back to the general dp
                     for other_word_index, other_locs in multi.get(n_gram, ()):
-                        score[other_word_index] += (n_locations + len(other_locs)
-                                                    - emd_1d_dp(locations, other_locs))
+                        score[other_word_index] += weight * (n_locations + len(other_locs)
+                                                             - emd_1d_dp(locations, other_locs))
 
         if normalize:
-            scores = [scores[n_idx] / self._denominator(n_idx, query_num_grams[n_idx])
+            scores = [scores[n_idx] / self._denominator(n_idx, query_totals[n_idx])
                       for n_idx in range(num_n)]
         return scores, candidates
 
-    def _denominator(self, n_idx: int, query_num_grams: int) -> np.ndarray:
+    def _denominator(self, n_idx: int, query_total: float) -> np.ndarray:
         """
         total n-gram count of (query, indexed word), for normalizing a similarity to 0..1
+        weighted by idf when `idf_exponent` is set, in which case both sides are weighted sums
 
         clamped away from zero: a word shorter than n produces no n-grams at all, so its
         numerator is zero anyway and the exact divisor is irrelevant -- we only need to
         avoid a 0/0 nan leaking into the scores
         """
-        denominator = self._num_grams_by_word[n_idx] + query_num_grams
-        return np.maximum(denominator, 1.0)
+        totals = self._weighted_total_by_word[n_idx] if self._weighted else self._num_grams_by_word[n_idx]
+        return np.maximum(totals + query_total, 1.0)
 
     def lookup(self,
                word: str,

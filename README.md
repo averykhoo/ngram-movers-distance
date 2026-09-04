@@ -93,6 +93,11 @@ from nmd.nmd_index_v7 import ApproxWordListV7
 word_list = ApproxWordListV7((2, 4))  # combined 2- and 4-grams seem to work best
 word_list.add_words(words)  # or add_word() one at a time
 
+# optionally weight rare n-grams more heavily: idf(gram) ** idf_exponent
+# 0.0 (the default) is unweighted and takes the original code path bit-for-bit.
+# helps on product names, HURTS on typo correction -- see docs/bow-plan.md parts 6-7
+weighted = ApproxWordListV7((2, 4), idf_exponent=2.0)
+
 # lookup returns [(word, score), ...], most similar first
 print(word_list.lookup(f'asalamalaikum'))
 print(word_list.lookup(f'walaikumalasam', top_k=3, normalize=True))

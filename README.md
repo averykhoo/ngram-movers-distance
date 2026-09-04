@@ -29,6 +29,10 @@ from nmd import ngram_movers_distance
 # n-gram mover's distance
 print(ngram_movers_distance(f'hello', f'yellow'))
 
+# n=1 compares character multisets by position, with no adjacency information
+# on typo correction it beats every larger n, see docs/bow-plan.md part 7
+print(ngram_movers_distance(f'hello', f'yellow', n=1))
+
 # similarity (inverted distance)
 print(ngram_movers_distance(f'hello', f'yellow', invert=True))
 
@@ -51,7 +55,10 @@ with open(f'dictionary.txt', encoding=f'utf8') as f:
     words = set(f.read().split())
 
 # index words
-word_list = WordList((2, 4), filter_n=0)  # combined 2- and 4-grams seem to work best
+# combined 2- and 4-grams seem to work best as index keys; note that for *scoring* alone,
+# n=(1,2) beats (2,4) by 11 points of hit@1 on typo correction (docs/bow-plan.md part 7),
+# but unigrams have almost no selectivity as a filter, so they are not useful for the index
+word_list = WordList((2, 4), filter_n=0)
 for word in words:
     word_list.add_word(word)
 

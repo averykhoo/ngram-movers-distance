@@ -553,8 +553,8 @@ over n; segment is a coordinate search on a stratified subsample (616 positives,
 
 - **n does not want tuning at the character level.** char-nmd is monotone
   decreasing in n (AP 0.437 / 0.434 / 0.421 / 0.397 for n = 2/3/4/5) and no
-  multi-n combination beats plain n=2. `n=1` is unavailable anyway
-  (`nmd/nmd_core.py:34`).
+  multi-n combination beats plain n=2. (`n=1` was unavailable when this ran;
+  it was added afterwards — see Part 7, where it matters a great deal.)
 - **bow-nmd's tuning did not transfer**: +0.038 train AP, −0.12 test F1.
 - **λ hurts monotonically** on this data (subsample AP 0.691 / 0.684 / 0.677 /
   0.660 for λ = 0 / 0.25 / 0.5 / 1.0), confirming Part 4.
@@ -620,6 +620,80 @@ For the segment metric, `mass(token) = Σ_g w(g)` over the token's n-grams; ever
 Part 2/4 invariant is linear in mass so segmentation-invariance and
 `similarity + distance == total` carry over, but `test_split_merge_is_perfect`
 must be re-run because merge-boundary n-grams now carry unequal weights.
+
+## Part 7 — the dictionary lookup task reverses almost all of Part 6
+
+Measured 2026-09-04. Script: `experiments/word_lookup_eval.py`. 8000 words from
+`experiments/words_en.txt`, 241 queries corrupted with 1-2 random edits
+(insert / delete / substitute / transpose), rank the whole dictionary.
+
+Everything in Parts 5-6 was product names. This is the task nmd was built for,
+and the conclusions do not carry over.
+
+| metric                        | hit@1 |   MRR | hit@10 |
+|-------------------------------|------:|------:|-------:|
+| `nmd n=(1,2)`                 | 0.938 | 0.957 |  0.988 |
+| `nmd n=1`                     | 0.934 | 0.957 |  0.992 |
+| difflib ratio                 | 0.905 | 0.937 |  0.983 |
+| `nmd n=(1,2,4)`               | 0.900 | 0.928 |  0.979 |
+| `nmd n=2 + idf¹`              | 0.863 | 0.904 |  0.971 |
+| `nmd n=2`                     | 0.846 | 0.894 |  0.971 |
+| `nmd n=(2,3)`                 | 0.842 | 0.879 |  0.954 |
+| cosine n=2, **no** idf        | 0.838 | 0.886 |  0.967 |
+| jaccard n=2                   | 0.834 | 0.886 |  0.971 |
+| `nmd n=(2,4)` — README default | 0.826 | 0.869 |  0.954 |
+| `nmd n=2 + idf²`              | 0.763 | 0.836 |  0.946 |
+| jaccard n=3                   | 0.743 | 0.803 |  0.921 |
+| tf-idf cosine n=2             | 0.734 | 0.810 |  0.938 |
+| tf-idf cosine n=3             | 0.676 | 0.760 |  0.900 |
+| tf-idf cosine n=2, idf²       | 0.440 | 0.542 |  0.739 |
+| `nmd n=2 + idf⁶`              | 0.344 | 0.445 |  0.627 |
+
+### Three reversals
+
+1. **nmd wins here.** 0.938 against tf-idf cosine's 0.734 and jaccard's 0.834.
+   On product names nmd lost to tf-idf cosine by 21 F1; here it wins by 20 points
+   of hit@1. The metric is not weak, it was being measured on the wrong task.
+2. **idf hurts.** Cosine *without* idf scores 0.838, *with* idf 0.734. For nmd,
+   idf¹ is worth +0.017 and everything above that is destructive (idf² 0.763,
+   idf⁶ 0.344). The reason is that the two tasks have opposite relationships
+   between rarity and signal: in a product catalogue a rare n-gram is the model
+   number, i.e. the answer; in a misspelled word a rare n-gram is usually **the
+   typo itself**, i.e. the noise. Weighting by rarity amplifies whichever it is.
+3. **Low n wins, monotonically**: 0.934 / 0.846 / 0.751 / 0.639 for n = 1/2/3/4.
+   The README's `(2,4)` default is 11 points worse than `(1,2)`.
+
+### What n=1 does and does not discard
+
+`n=1` keeps *position* — it is still a 1-D EMD over character positions — and
+discards only *adjacency*. So the finding is not "order does not matter" but
+"positional information carries the signal, and adjacency costs more in
+brittleness under edits than it pays back". A single substitution destroys two
+bigrams and three trigrams but only one unigram, which is exactly the observed
+monotone decline in n.
+
+⚠ **`n=1` is a good scorer but a bad index key.** A unigram posting list over a
+26-letter alphabet has almost no selectivity, so Part 1's n-gram filter still
+needs n >= 2. The natural combination is to prune on 2- or 3-grams and rescore
+with `n=(1,2)`, which is also why the README's index default is left alone.
+
+### Consequence for the idf plan in Part 6
+
+Part 6 recommended shipping `weights` with a default of `p=2`. **That default is
+wrong for this library.** idf should be opt-in with no weighting by default: the
+documented primary use case is dictionary lookup, where p=1 is marginal and p=2
+costs 8 points of hit@1. Corpus-appropriate weighting is a caller's decision,
+not a default. The structural change (a `weights` parameter, free because nmd
+accumulates per n-gram type) is still worth making.
+
+### Caveats
+
+- 241 queries, so differences below ~0.03 hit@1 are not resolvable; `n=1` and
+  `n=(1,2)` are tied within noise, but both clearly beat `(2,4)`.
+- Corruptions are uniform random edits. Real typos are keyboard-adjacent or
+  phonetic, and the README's own examples (`asalamalaikum` ->
+  `assalamualaikum`) are transliteration variants with a different edit profile.
+- English only; `experiments/words_ms.txt` is untested.
 
 ### Prior art to check before implementing
 

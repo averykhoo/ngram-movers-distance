@@ -13,7 +13,8 @@ def ngram_movers_distance(word_1: str,
 
     :param word_1: a string
     :param word_2: another string, or possibly the same string
-    :param n: number of chars per n-gram (default 2)
+    :param n: number of chars per n-gram (default 2); n == 1 drops the START/END markers, making it a
+              positional comparison of character multisets, which carries no adjacency information
     :param invert: return similarity instead of difference
     :param normalize: normalize to a score from 0 to 1 (inclusive of 0 and 1)
     :return: n-gram mover's distance, possibly inverted and/or normalized
@@ -31,16 +32,19 @@ def ngram_movers_distance(word_1: str,
 
     if not isinstance(n, int):
         raise TypeError(n)
-    if n < 2:
-        raise ValueError(n)  # technically it would work for n==1, but we'd want to drop the START and END flags
+    if n < 1:
+        raise ValueError(n)
 
     # add START_TEXT and END_TEXT markers to each word
     # https://en.wikipedia.org/wiki/Control_character#Transmission_control
     # the usage of these characters in any text is almost certainly a bug
     # it is possible to avoid using these characters by using a tuple of optional strings for each n-gram
     # but that's slightly slower and uses more memory
-    word_1 = f'\2{word_1}\3'
-    word_2 = f'\2{word_2}\3'
+    # n == 1 is the exception: the markers would become two unigrams that match between any pair of words,
+    # so they are dropped, and n == 1 is then a pure character multiset comparison with positions
+    if n > 1:
+        word_1 = f'\2{word_1}\3'
+        word_2 = f'\2{word_2}\3'
 
     # number of n-grams per word
     num_grams_1 = len(word_1) - n + 1
@@ -70,5 +74,10 @@ def ngram_movers_distance(word_1: str,
     # return similarity or distance, optionally normalized
     output = similarity if invert else num_grams_1 + num_grams_2 - similarity
     if normalize:
+        # two words can have no n-grams at all between them (both empty at n == 1, or both shorter than
+        # n - 2 for larger n), which used to raise ZeroDivisionError. there is nothing to disagree about,
+        # so the distance is 0 and the similarity is 1
+        if num_grams_1 + num_grams_2 == 0:
+            return 1.0 if invert else 0.0
         output /= num_grams_1 + num_grams_2
     return output

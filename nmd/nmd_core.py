@@ -74,10 +74,13 @@ def ngram_movers_distance(word_1: str,
     # return similarity or distance, optionally normalized
     output = similarity if invert else num_grams_1 + num_grams_2 - similarity
     if normalize:
-        # two words can have no n-grams at all between them (both empty at n == 1, or both shorter than
-        # n - 2 for larger n), which used to raise ZeroDivisionError. there is nothing to disagree about,
-        # so the distance is 0 and the similarity is 1
+        # two words can have no n-grams at all between them (both empty at n == 1, or both exactly
+        # n - 2 characters long for larger n), which used to raise ZeroDivisionError. there is no
+        # n-gram evidence either way, so fall back to comparing the strings -- which is exactly what
+        # the callers of this function already did with the exception they caught, e.g.
+        # `int(word_1 != word_2)` in nmd_bow.bow_ngram_movers_distance
         if num_grams_1 + num_grams_2 == 0:
-            return 1.0 if invert else 0.0
+            identical = word_1 == word_2
+            return float(identical) if invert else float(not identical)
         output /= num_grams_1 + num_grams_2
     return output

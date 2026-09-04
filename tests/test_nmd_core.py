@@ -41,6 +41,19 @@ def test_no_ngrams_at_all_does_not_raise():
     assert ngram_movers_distance('a', 'a', n=4, normalize=True) == pytest.approx(0.0)
 
 
+def test_no_ngrams_at_all_still_distinguishes_different_words():
+    """
+    with no n-grams on either side there is no evidence from n-grams, but the words are still
+    different and must not come back as identical. this reproduces the fallback the callers used to
+    implement themselves in the ZeroDivisionError handler, `int(word_1 != word_2)`.
+    """
+    assert ngram_movers_distance('a', 'b', n=4, normalize=True) == pytest.approx(1.0)
+    assert ngram_movers_distance('a', 'b', n=4, invert=True, normalize=True) == pytest.approx(0.0)
+    assert ngram_movers_distance('', 'x', n=2, normalize=True) > 0.0
+    # and equal words at the same length still agree
+    assert ngram_movers_distance('ab', 'ab', n=4, normalize=True) == pytest.approx(0.0)
+
+
 @pytest.mark.parametrize('n', [1, 2, 3])
 def test_symmetry(n):
     for a, b in [('hello', 'yellow'), ('pineapple', 'apple'), ('abc', ''), ('kitten', 'sitting')]:

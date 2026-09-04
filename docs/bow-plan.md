@@ -695,6 +695,71 @@ accumulates per n-gram type) is still worth making.
   `assalamualaikum`) are transliteration variants with a different edit profile.
 - English only; `experiments/words_ms.txt` is untested.
 
+## Part 8 — every metric, every dataset, one ranking
+
+Measured 2026-09-05. Script: `experiments/benchmark_all.py`. Three tasks:
+
+- **A** product-name retrieval — 100 Abt names ranked against 1092 Buy names
+- **B** product-name matching — ER-Magellan Abt-Buy pairs, one tuned threshold, test F1
+- **C** typo correction — 241 corrupted words ranked against an 8000-word dictionary
+
+`idf` is fitted per task on the corpus being searched, as an index would have it.
+
+### Rank within each task (1 = best), sorted by worst showing
+
+| metric | A retrieval | B match F1 | C typos | worst |
+|---|---:|---:|---:|---:|
+| `nmd n=2 idf¹` | 7 | 7 | 5 | **7** |
+| `nmd n=2 idf²` | 4 | 5 | 9 | 9 |
+| monge-elkan (JW) | 10 | 10 | 4 | 10 |
+| jaccard char-3gram | 9 | 11 | 11 | 11 |
+| tf-idf cos char-2gram | 1 | 2 | 12 | 12 |
+| jaccard char-2gram | 8 | 12 | 7 | 12 |
+| `nmd n=3 idf²` | 5 | 6 | 13 | 13 |
+| `nmd n=(1,2)` | 13 | 13 | **1** | 13 |
+| tf-idf cos char-3gram | 3 | 3 | 14 | 14 |
+| tf-idf cos char-3gram idf² | 2 | **1** | 15 | 15 |
+| `nmd n=2` | 15 | 14 | 6 | 15 |
+| `nmd n=(2,4)` | 11 | 16 | 8 | 16 |
+| soft tf-idf (JW) | 6 | 4 | 17 | 17 |
+| `nmd n=1` | 16 | 17 | 2 | 17 |
+| difflib ratio | 17 | 19 | 3 | 19 |
+
+Headline numbers: A `tf-idf cos char-2gram` 0.890 hit@1; B `tf-idf cos char-3gram idf²`
+**70.10 F1** (clearing DeepMatcher+ 62.8 with one threshold and one attribute);
+C `nmd n=(1,2)` 0.938 hit@1.
+
+### What it says
+
+- **No metric wins everywhere, and the spread is enormous.** The task-B winner
+  (`tf-idf char-3gram idf²`) places 15th of 17 on typos, 0.560 against the
+  leader's 0.938. The task-C winner (`nmd n=(1,2)`) places 13th on both product
+  tasks. Picking by a single benchmark would be a mistake in either direction.
+- **`nmd n=2 idf¹` is the best all-rounder** — never first, never worse than
+  7th. Exponent 1 is where the two domains stop disagreeing: it is worth
+  +0.15 hit@1 on A and +10 F1 on B, and is still slightly *positive* on C
+  (0.846 -> 0.867), whereas exponent 2 buys another +6 F1 on B but costs 7
+  points of hit@1 on C.
+- **The rarity/signal split from Part 7 explains the whole table.** Everything
+  that ranks well on A and B is idf-weighted or char-tf-idf; everything that
+  ranks well on C is low-n and unweighted. A rare n-gram is the model number in
+  a catalogue and the typo itself in a misspelling.
+- **`difflib` is a genuinely good typo matcher** (3rd, 0.905) and the worst
+  product matcher in the table (17th / 19th).
+
+### Caveats
+
+- ⚠ The `sec` columns are **not** a speed benchmark. Metrics are called pairwise
+  with no caching, so tf-idf rebuilds both vectors on every comparison; with
+  precomputed vectors the same task-A work takes 0.4 s rather than 17 s. Use
+  `experiments/baseline_eval.py` for timing, or the V7 index.
+- ⚠ `tf-idf cos token` and `soft tf-idf` score ~0 on task C because they are
+  **structurally inapplicable**, not merely bad: a misspelled word is an unseen
+  token, so its token tf-idf vector is empty and its cosine against every
+  candidate is 0. Their task-C rows should be read as N/A.
+- 100 queries on A, 241 on C, so differences below ~0.04 hit@1 are noise.
+- Names only throughout; no description or price field.
+
 ### Prior art to check before implementing
 
 - Word Mover's Distance retrieval (Kusner et al. 2015): WCD/RWMD bounds,

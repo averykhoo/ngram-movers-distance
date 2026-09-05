@@ -19,7 +19,7 @@ only changes how the score is reported:
 `case_sensitive` is held at the default False: the typo dictionaries are already casefolded, and
 on product names True would only fragment postings.
 
-five retrieval tasks. an index cannot consume ER-Magellan's labelled pairs directly, so that one
+six retrieval tasks. an index cannot consume ER-Magellan's labelled pairs directly, so that one
 is reframed into retrieval (see load_ermagellan):
 
     typo         8000 words from words_en.txt, queries are words corrupted by 1-2 edits
@@ -28,12 +28,17 @@ is reframed into retrieval (see load_ermagellan):
                  are a property of the metric or of English
     typo_hard    30000 words from british-english-insane.txt with 2-3 edits. denser dictionary
                  and a bigger edit budget, so near-misses are genuinely ambiguous
+    typo_brutal  all three word lists merged (518k words), corrupted with 2-5 edits, then
+                 filtered to the 250 most-mangled queries by damerau-levenshtein distance
+                 normalized by answer length. the other typo tasks saturate -- their top
+                 configurations sit within 0.01 MAP of each other -- while this one spreads
+                 them over a 3x range, so it is the one that actually discriminates
     abtbuy       1092 Buy product names indexed, queries are Abt names, truth is a set of Buy ids
     ermagellan   the long-document task: entities are `COL name VAL ... COL description VAL ...`
                  averaging ~143 characters against ~20 for a product name and ~8 for a dictionary
                  word. nothing else here measures that regime
 
-the three typo tasks each have exactly one right answer, so on them MAP is numerically identical
+the four typo tasks each have exactly one right answer, so on them MAP is numerically identical
 to MRR and NDCG is a log-discounted reciprocal rank. they are still more sensitive than hit@1.
 abtbuy and ermagellan have set-valued truth, though both are close to 1:1 in practice, so do not
 expect MAP and MRR to diverge far anywhere in this file.
@@ -54,7 +59,7 @@ wasteful -- stage 2 carries forward stage 1's best and re-measures a spread of t
 regression check.
 
 abtbuy and ermagellan live in gitignored .scratch/data/ and are absent on a fresh clone; those
-tasks skip themselves with a message rather than failing. the three typo tasks are self-contained.
+tasks skip themselves with a message rather than failing. the four typo tasks are self-contained.
 """
 import ast
 import csv
@@ -75,6 +80,7 @@ from typing import Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from edit_distance import damerau_levenshtein_distance
 from ranking_metrics import average_precision
 from ranking_metrics import hit_at_k
 from ranking_metrics import ndcg_at_k
@@ -170,6 +176,80 @@ def load_typo(path: Path = WORDS, dict_size: int = 8000, num_queries: int = 250,
     documents = sorted(set(targets) | set(rng.sample(rest, max(0, dict_size - num_queries))))
     queries = [(corrupt(w, rng.choice(list(edits)), rng), w) for w in targets]
     return documents, [(q, {w}) for q, w in queries if q != w]
+
+
+def load_typo_brutal(dict_size: int = 30000, num_queries: int = 250, seed: int = 0,
+                     pool_multiplier: int = 8, edits: Sequence[int] = (2, 3, 4, 5),
+                     min_answer_len: int = 6):
+    """
+    the hardest typo task: all three word lists merged, corrupted hard, worst queries kept
+
+    the other typo tasks apply 1-2 (or 2-3) edits and keep everything. this generates a pool
+    `pool_multiplier` times larger with a 2-5 edit budget, measures how mangled each query
+    actually came out, and keeps only the worst `num_queries`.
+
+    ranked by **Damerau-Levenshtein** distance normalized by the answer's length, and both halves
+    of that matter:
+
+    * damerau rather than plain levenshtein, because `corrupt` picks uniformly from insert,
+      delete, substitute and *transpose*. plain levenshtein charges a transposition 2 where
+      damerau charges 1, so ranking by it would systematically rate transposition-heavy
+      corruptions as worse than they are and fill the benchmark with them
+    * normalized by length, because raw distance just selects long words. 3 edits to a
+      4-character word is unrecognizable; 3 edits to a 15-character word is a mild typo
+
+    ⚠ normalizing *inverts* that bias rather than removing it: ranked by ratio alone the pool
+    fills with short words destroyed outright -- measured 2026-09-05 the top of an unfiltered
+    pool was ('iv', 'daily'), ('ot', 'eten'), ('xtc', 'nati'). those are not hard examples, they
+    are unrecoverable ones, and a benchmark made of them scores every configuration at zero and
+    ranks nothing. `min_answer_len` is the guard: at 6+ characters a 0.5 ratio still leaves
+    several characters of signal, so the query is brutal but a good metric can still win.
+
+    note the edit budget is an upper bound, not the achieved distance -- operations overlap and
+    cancel (a delete then an insert at the same index can restore the original), so the realized
+    distance has to be measured rather than assumed. that is the other reason to rank rather than
+    just raise the budget.
+
+    the merged vocabulary is also harder in its own right: english and malay share an alphabet,
+    so the dictionary has far more near-neighbours per word than either list alone
+    """
+    rng = random.Random(seed)
+    vocab_set = set()
+    for path in (WORDS, WORDS_MS, WORDS_INSANE):
+        if not path.exists():
+            continue
+        with open(path, encoding='utf8') as f:
+            vocab_set.update(w.strip().casefold() for w in f
+                             if w.strip().isalpha() and 3 <= len(w.strip()) <= 15)
+    vocab = sorted(vocab_set)
+
+    long_enough = [w for w in vocab if len(w) >= min_answer_len]
+    pool_size = min(len(long_enough), num_queries * pool_multiplier)
+    pool = rng.sample(long_enough, pool_size)
+    scored = []
+    for word in pool:
+        query = corrupt(word, rng.choice(list(edits)), rng)
+        if query == word:
+            continue
+        distance = damerau_levenshtein_distance(query, word)
+        # a query that retains nothing of the answer is noise, not a hard example: no metric can
+        # recover it, so keeping it would only add a constant floor to every configuration
+        if distance >= len(word):
+            continue
+        scored.append((distance / len(word), distance, query, word))
+    scored.sort(reverse=True)
+    kept = scored[:num_queries]
+
+    targets = [word for _, _, _, word in kept]
+    rest = [w for w in vocab if w not in set(targets)]
+    documents = sorted(set(targets) | set(rng.sample(rest, max(0, dict_size - len(targets)))))
+    ratios = [ratio for ratio, _, _, _ in kept]
+    print(f'typo_brutal: merged vocabulary {len(vocab)} words, kept the {len(kept)} most-mangled '
+          f'of {len(scored)} candidates')
+    print(f'  normalized damerau-levenshtein: min {min(ratios):.2f} '
+          f'median {sorted(ratios)[len(ratios) // 2]:.2f} max {max(ratios):.2f}')
+    print(f'  examples: {[(q, w) for _, _, q, w in kept[:6]]}')
+    return documents, [(query, {word}) for _, _, query, word in kept]
 
 
 def load_ermagellan(seed: int = 0):
@@ -354,15 +434,45 @@ def load_shortlist(limit: int) -> List[tuple]:
     so unigrams have no signal at all there. spending five hours measuring that is not worth it.
     running the shortlist instead still places ermagellan in the cross-task ranking -- aggregate()
     intersects on configurations measured everywhere, so it just narrows the field to these
+
+    the shortlist is *stratified by n*, not simply the top `limit` rows. taking the top rows flat
+    would pick nothing but n=(1,2) -- it wins the four cheap benchmarks outright, so it occupies
+    all 24 leading positions -- and n=(1,2) is exactly the configuration that cannot work on long
+    documents. that shortlist would spend hours re-confirming one already-measured fact and would
+    leave every other n-grid unmeasured on this task. round-robining over n-grids costs the same
+    and actually answers the question
     """
     path = RESULTS / 'index_param_search_overall.csv'
     if not path.exists():
         raise SystemExit(f'{path} not found -- run --aggregate on the other tasks first')
-    chosen = []
-    for row in read_csv(path)[:limit]:
-        chosen.append((ast.literal_eval(row['n']), float(row['idf_exponent']),
-                       float(row['dim']), row['normalize'] == 'True',
-                       float(row['position_weight']), row['denominator']))
+
+    def as_config(row):
+        return (ast.literal_eval(row['n']), float(row['idf_exponent']), float(row['dim']),
+                row['normalize'] == 'True', float(row['position_weight']), row['denominator'])
+
+    by_n: Dict[tuple, List[tuple]] = defaultdict(list)
+    for row in read_csv(path):  # already sorted best-first by mean rank
+        by_n[ast.literal_eval(row['n'])].append(as_config(row))
+
+    chosen: List[tuple] = []
+    for depth in range(max((len(v) for v in by_n.values()), default=0)):
+        for n in sorted(by_n):
+            if depth < len(by_n[n]) and len(chosen) < limit:
+                chosen.append(by_n[n][depth])
+        if len(chosen) >= limit:
+            break
+    # each task's own winner, which mean rank can bury: abtbuy's best (idf 3.0, normalize=False)
+    # is near-worst on the typo tasks, so it never surfaces in a cross-task ranking -- yet it is
+    # exactly the configuration worth checking on another product-matching task
+    for other in RESULTS.glob('index_param_search_*_unified.csv'):
+        rows = [r for r in read_csv(other) if r.get('map')]
+        if not rows:
+            continue
+        best = as_config(max(rows, key=lambda r: float(r['map'])))
+        if best not in chosen:
+            chosen.append(best)
+
+    # the library default belongs in every comparison whether or not it ranked well
     default = ((2, 4), 0.0, 1.0, False, 1.0, 'dice')
     if default not in chosen:
         chosen.append(default)
@@ -647,6 +757,7 @@ TASKS = {
     'typo': (lambda: load_typo(WORDS), WORDS),
     'typo_ms': (lambda: load_typo(WORDS_MS), WORDS_MS),
     'typo_hard': (lambda: load_typo(WORDS_INSANE, dict_size=30000, edits=(2, 2, 3)), WORDS_INSANE),
+    'typo_brutal': (load_typo_brutal, WORDS_INSANE),
     'abtbuy': (load_abtbuy, DATA / 'Abt.csv'),
     'ermagellan': (load_ermagellan, DATA / 'er_magellan' / 'valid.txt'),
 }

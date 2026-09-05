@@ -160,7 +160,9 @@ class TestContainerProtocol:
         for word in ['abcd', 'abab', 'bcde', 'ababab', 'cdef']:
             word_list.add_word(word)
             word_list.lookup('ab', top_k=2)
-        for word, score in word_list.lookup('abab', top_k=5):
+        # normalize is passed explicitly: this checks the un-normalized similarity, and used to
+        # rely on that being lookup's default before it flipped to True
+        for word, score in word_list.lookup('abab', top_k=5, normalize=False):
             assert score == pytest.approx(exact_similarity('abab', word, (2,), False), abs=1e-12)
 
     def test_freeze_does_not_retain_python_posting_lists(self):
@@ -230,7 +232,8 @@ class TestScoring:
         """exercises the dynamic-programming fallback rather than the vectorised path"""
         word_list = ApproxWordListV7(2).add_words(['abababab', 'ababab', 'ab', 'ba', 'aaaa'])
         assert word_list.lookup('ababab', top_k=1)[0][0] == 'ababab'
-        for word, score in word_list.lookup('abab', top_k=5):
+        # as above, normalize=False is now explicit rather than inherited from the default
+        for word, score in word_list.lookup('abab', top_k=5, normalize=False):
             assert score == pytest.approx(exact_similarity('abab', word, (2,), False), abs=1e-12)
 
     def test_top_k_limits_results(self):

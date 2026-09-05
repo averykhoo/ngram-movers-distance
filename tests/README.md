@@ -1,6 +1,6 @@
 # Tests for N-gram Mover's Distance
 
-Counts below were measured 2026-09-05 (`537 passed, 1 xfailed`). They will drift — re-run
+Counts below were measured 2026-09-05 (`992 passed, 1 xfailed`). They will drift — re-run
 `pytest --collect-only -q` rather than trusting them.
 
 ## Running
@@ -19,6 +19,10 @@ in the top-level README):
 | `test_bow.py`, `test_segments.py` | `scipy`, `numpy` |
 | `test_index_v7.py`, `test_index_v7_idf.py` | `numpy` |
 | `test_word_set.py`, `test_word_set_idf.py` | `pyroaring`, `regex` |
+| `test_parity_with_nmd.py` | `numpy`, `pyroaring`, `regex` for some classes; skips per fixture |
+
+`test_parity_with_nmd.py` also reads `experiments/words_en.txt` and skips the whole module if
+it is missing — it is the only test file that needs a corpus.
 
 ## Test files
 
@@ -34,6 +38,7 @@ in the top-level README):
 | `test_bow.py` | 59 | `bow_ngram_movers_distance`, plus `emd_1d_fast ≡ emd_1d_dp` (`TestEmd1dFast`) |
 | `test_segments.py` | 50 | `segment_movers_distance` and `align_segments`: split/merge tolerance, `lam` / `mu` |
 | `test_find_replace_trie.py` | 5 | `experiments/find_replace_trie.py` — note this is the only file testing code **outside** the `nmd` package |
+| `test_parity_with_nmd.py` | 455 | every index's score against `ngram_movers_distance` recomputed from the strings, over 2000 words of `words_en.txt` |
 
 ## Things worth knowing
 
@@ -48,7 +53,16 @@ in the top-level README):
   which tests actually go red; each names them in its module docstring. Do the same when
   adding a regression test here — and where the bug is only reachable *after* a fix (the
   denominator clamps in V6), delete the guard and watch it raise instead.
-* **`nmd/nmd_word_set.py` is still not verified in general** (HANDOFF #10). `test_word_set.py`
-  covers the API surface and the two 2026-09-05 fixes; whether `find_similar`'s scoring is
-  correct is untested, and it returns an approximate score with the exact-rescoring pass
-  commented out.
+* **`find_similar`'s scoring is now verified** (HANDOFF #10, closed 2026-09-05 by
+  `test_parity_with_nmd.py`). It equals `ngram_movers_distance` exactly — but *pooled*:
+  `sum_n similarity / sum_n n-gram count`, one ratio over every n, where V6 and V7 return the
+  mean of the per-n ratios. Both are exactly nmd; they are different aggregations of it, and
+  they differ by ~0.09 on short words. Do not expect `WordSet` and `WordList` to agree.
+* **Two known, deliberate divergences from nmd are pinned rather than fixed**, both in
+  `test_parity_with_nmd.py`: `WordSet` keeps the START/END markers at `n == 1` (nmd drops
+  them), and V6/V7 score a `0 / 0` normalization as 0.0 where nmd falls back to comparing the
+  strings and returns 1.0 (reachable only for identical words of length `<= n - 3`).
+* **The parity file was sabotage-checked, not just run green** (2026-09-05). Adding `1e-6` to
+  the similarity accumulator in each of V5, V6 (`nmd_index.py`), V7 (`nmd_index_v7.py`) and
+  `WordSet` (`nmd_word_set.py`) turned exactly that class's tests red — 164 and 232 failures
+  respectively, none of them leaking into the other classes' pins.

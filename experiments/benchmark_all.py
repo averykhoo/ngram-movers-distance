@@ -36,6 +36,17 @@ from experiments.er_magellan_eval import f1_at
 from experiments.er_magellan_eval import read_split
 from experiments.idf_variants import grams
 from experiments.idf_variants import weighted_nmd
+from experiments.v7_ranking import build_ranker
+
+# the nmd rows on tasks A and C are served by an ApproxWordListV7 index rather than by scoring
+# every candidate pairwise. verified against the pre-port implementation 2026-09-05:
+#
+#   task C (2000 words x 77 queries): all 8 nmd rows identical, hit@1 and MRR to 3 decimals,
+#     including the three geo-normalized idf rows. 3.4-8.0s -> 0.098-0.600s
+#   task A (1092 Buy names x 40 queries): the 5 unweighted rows identical; the 3 idf rows match
+#     on hit@1 but differ on MRR (0.872 -> 0.873, 0.882 -> 0.889, 0.881 -> 0.886) because
+#     make_metrics fits idf over Abt *and* Buy while the index fits over Buy alone. those rows
+#     are labelled [V7 idf] for that reason. 3.6-13.0s -> 0.33-5.1s
 from nmd.nmd_bow import bow_ngram_movers_distance
 from nmd.nmd_core import ngram_movers_distance
 from nmd.nmd_segments import segment_movers_distance
@@ -117,6 +128,36 @@ CHEAP = {'jaccard char-2gram', 'jaccard char-3gram', 'tf-idf cos token', 'tf-idf
          'monge-elkan (JW)', 'difflib ratio', 'nmd n=1', 'nmd n=2', 'nmd n=3', 'nmd n=(1,2)',
          'nmd n=(2,4)', 'nmd n=2 idf^1', 'nmd n=2 idf^2', 'nmd n=3 idf^2'}
 
+# the nmd rows on the two *retrieval* tasks (A and C) are served by an ApproxWordListV7 index
+# instead of by scoring every candidate pairwise. the substitution is exact -- V7's pruning bound
+# is two-sided, so lookup returns what an exhaustive scan would, and lookup(dim=1, normalize=True)
+# is the same mean-over-n of per-n normalized similarity that nmd_multi computes pairwise.
+# `denominator='geo'` reproduces the geometric normalization idf_variants.weighted_nmd uses.
+#
+# task A2 is not ported: it reranks 20 candidates, where building an index costs more than it
+# saves. task B is not ported at all -- it thresholds labelled pairs, which is not retrieval and
+# has no ranking for an index to produce.
+#
+# ⚠ the idf rows are close but not identical in formula: V7 fits idf internally as
+# log((V + 1) / df) over the indexed corpus, where build_idf uses log((V + 1) / df) over the
+# corpus passed to make_metrics -- which on task A is Abt *and* Buy names, while the index holds
+# only Buy. so those three rows are fitted on a different document set, and are reported as
+# `[V7 idf]` rather than silently reusing the old label.
+INDEX_SPECS = {
+    'nmd n=1': dict(n=(1,)),
+    'nmd n=2': dict(n=(2,)),
+    'nmd n=3': dict(n=(3,)),
+    'nmd n=(1,2)': dict(n=(1, 2)),
+    'nmd n=(2,4)': dict(n=(2, 4)),
+    'nmd n=2 idf^1 [V7 idf]': dict(n=(2,), idf_exponent=1.0, denominator='geo'),
+    'nmd n=2 idf^2 [V7 idf]': dict(n=(2,), idf_exponent=2.0, denominator='geo'),
+    'nmd n=3 idf^2 [V7 idf]': dict(n=(3,), idf_exponent=2.0, denominator='geo'),
+}
+# names make_metrics still provides but which an index now serves, so the pairwise version is
+# skipped on the retrieval tasks rather than measured twice
+SUPERSEDED = {'nmd n=1', 'nmd n=2', 'nmd n=3', 'nmd n=(1,2)', 'nmd n=(2,4)',
+              'nmd n=2 idf^1', 'nmd n=2 idf^2', 'nmd n=3 idf^2'}
+
 
 def rank_table(title, rows, headers):
     print()
@@ -145,7 +186,7 @@ def task_a(num_queries=100):
 
     results = []
     for name, metric in metrics.items():
-        if name not in CHEAP:
+        if name not in CHEAP or name in SUPERSEDED:
             continue
         t0 = time.perf_counter()
         hits = rr = 0
@@ -155,6 +196,29 @@ def task_a(num_queries=100):
             rank = next(i for i, (_, bid) in enumerate(scored, 1) if bid in truth[aid])
             hits += rank == 1
             rr += 1 / rank
+        results.append((name, (hits / num_queries, rr / num_queries, time.perf_counter() - t0)))
+        print(f'  A {name:<30} {hits / num_queries:.3f}', file=sys.stderr)
+
+    # the index is keyed by string, so Buy rows sharing a normalized name collapse to one
+    # document; a returned name is correct if any row carrying it is a true match
+    text_to_ids = defaultdict(set)
+    for bid in buy_ids:
+        if buy_norm[bid]:
+            text_to_ids[buy_norm[bid]].add(bid)
+    buy_texts = sorted(text_to_ids)
+    for name, spec in INDEX_SPECS.items():
+        t0 = time.perf_counter()
+        rank_fn = build_ranker(buy_texts, **spec)
+        hits = rr = 0
+        for aid in queries:
+            query = norm(abt[aid])
+            position = None
+            for i, (text, _score) in enumerate(rank_fn(query), 1):
+                if text_to_ids[text] & truth[aid]:
+                    position = i
+                    break
+            hits += position == 1
+            rr += 1 / position if position else 0.0
         results.append((name, (hits / num_queries, rr / num_queries, time.perf_counter() - t0)))
         print(f'  A {name:<30} {hits / num_queries:.3f}', file=sys.stderr)
     results.sort(key=lambda kv: -kv[1][0])
@@ -248,6 +312,8 @@ def task_c(dict_size=8000, num_queries=250, seed=0):
 
     results = []
     for name, metric in metrics.items():
+        if name in SUPERSEDED:
+            continue
         t0 = time.perf_counter()
         hits = rr = 0
         for query, answer in queries:
@@ -255,6 +321,18 @@ def task_c(dict_size=8000, num_queries=250, seed=0):
             rank = next(i for i, (_, word) in enumerate(scored, 1) if word == answer)
             hits += rank == 1
             rr += 1 / rank
+        results.append((name, (hits / len(queries), rr / len(queries), time.perf_counter() - t0)))
+        print(f'  C {name:<30} {hits / len(queries):.3f}', file=sys.stderr)
+
+    for name, spec in INDEX_SPECS.items():
+        t0 = time.perf_counter()
+        rank_fn = build_ranker(dictionary, **spec)
+        hits = rr = 0
+        for query, answer in queries:
+            ranked = [word for word, _score in rank_fn(query)]
+            position = ranked.index(answer) + 1 if answer in ranked else None
+            hits += position == 1
+            rr += 1 / position if position else 0.0
         results.append((name, (hits / len(queries), rr / len(queries), time.perf_counter() - t0)))
         print(f'  C {name:<30} {hits / len(queries):.3f}', file=sys.stderr)
     results.sort(key=lambda kv: -kv[1][0])

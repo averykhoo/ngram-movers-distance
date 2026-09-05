@@ -29,6 +29,7 @@ import nmd.nmd_segments
 from nmd.nmd_bow import bow_ngram_movers_distance
 from nmd.nmd_core import ngram_movers_distance
 from nmd.nmd_segments import segment_movers_distance
+from experiments.v7_ranking import build_ranker
 
 DATA = Path(__file__).resolve().parent.parent / '.scratch' / 'data'
 
@@ -200,6 +201,8 @@ def main(num_queries=100, num_candidates=20, seed=0):
     print('=' * 92)
     print(f'{"metric":<24} {"hit@1":>8} {"MRR":>8} {"recall@10":>10} {"recall@20":>10} {"sec":>7}')
     for name, metric in CHEAP.items():
+        if name == 'char-nmd(2)':
+            continue  # served by the index below instead of scoring 1092 names pairwise
         t0 = time.perf_counter()
         hits = rr = r10 = r20 = 0
         for aid, qf in queries:
@@ -212,6 +215,32 @@ def main(num_queries=100, num_candidates=20, seed=0):
         elapsed = time.perf_counter() - t0
         print(f'{name:<24} {hits / num_queries:>8.3f} {rr / num_queries:>8.3f} '
               f'{r10 / num_queries:>10.3f} {r20 / num_queries:>10.3f} {elapsed:>7.1f}')
+
+    # char-nmd(2) through an ApproxWordListV7 index rather than 1092 pairwise calls per query.
+    # exact, not approximate: V7's pruning bound is two-sided and lookup(dim=1, normalize=True)
+    # is the same quantity ngram_movers_distance(n=2, invert=True, normalize=True) returns.
+    # the index is keyed by string, so Buy rows sharing a normalized name collapse into one
+    # document and a returned name counts as correct if any row carrying it is a true match
+    text_to_ids = defaultdict(set)
+    for bid in buy_ids:
+        if buy_f[bid]['joined']:
+            text_to_ids[buy_f[bid]['joined']].add(bid)
+    t0 = time.perf_counter()
+    rank_fn = build_ranker(sorted(text_to_ids), n=(2,))
+    hits = rr = r10 = r20 = 0
+    for aid, qf in queries:
+        rank = None
+        for i, (text, _score) in enumerate(rank_fn(qf['joined']), 1):
+            if text_to_ids[text] & truth[aid]:
+                rank = i
+                break
+        hits += rank == 1
+        rr += 1 / rank if rank else 0.0
+        r10 += bool(rank and rank <= 10)
+        r20 += bool(rank and rank <= 20)
+    elapsed = time.perf_counter() - t0
+    print(f'{"char-nmd(2)":<24} {hits / num_queries:>8.3f} {rr / num_queries:>8.3f} '
+          f'{r10 / num_queries:>10.3f} {r20 / num_queries:>10.3f} {elapsed:>7.1f}')
 
     # ---------------- part B: rerank a neutral prefilter ----------------
     prefilter = CHEAP['tf-idf cos char-3gram']

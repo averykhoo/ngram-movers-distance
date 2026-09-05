@@ -17,7 +17,11 @@ from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from nmd.nmd_core import ngram_movers_distance
+from v7_ranking import build_ranker
 
 WORDS = Path(__file__).resolve().parent / 'words_en.txt'
 ALPHABET = 'abcdefghijklmnopqrstuvwxyz'
@@ -105,18 +109,34 @@ def main(dict_size=8000, num_queries=250, seed=0):
         sim = sum(idf(g, n, p) * (len(v) + len(lb[g]) - emd_1d_dp(v, lb[g])) for g, v in la.items() if g in lb)
         return sim / (ta + tb) if ta + tb else 1.0
 
-    METRICS = {
-        'nmd n=1': lambda a, b: nmd_multi(a, b, (1,)),
-        'nmd n=2': lambda a, b: nmd_multi(a, b, (2,)),
-        'nmd n=3': lambda a, b: nmd_multi(a, b, (3,)),
-        'nmd n=4': lambda a, b: nmd_multi(a, b, (4,)),
-        'nmd n=(1,2)': lambda a, b: nmd_multi(a, b, (1, 2)),
-        'nmd n=(2,3)': lambda a, b: nmd_multi(a, b, (2, 3)),
-        'nmd n=(2,4)  [README default]': lambda a, b: nmd_multi(a, b, (2, 4)),
-        'nmd n=(1,2,4)': lambda a, b: nmd_multi(a, b, (1, 2, 4)),
-        'nmd n=2 + idf^1': lambda a, b: weighted_nmd(a, b, 2, 1.0),
-        'nmd n=2 + idf^2': lambda a, b: weighted_nmd(a, b, 2, 2.0),
-        'nmd n=2 + idf^6': lambda a, b: weighted_nmd(a, b, 2, 6.0),
+    # every nmd row is served by an ApproxWordListV7 index rather than by scoring the whole
+    # dictionary pairwise. this is an exact substitution, not an approximation: V7's pruning
+    # bound is two-sided, and `lookup(dim=1, normalize=True)` computes the same mean-over-n of
+    # per-n normalized similarity that `nmd_multi` computes. verified 2026-09-05 over 1200 words
+    # x 57 queries at n = 1, 2, 3, (1,2), (2,4), (1,2,4): worst score difference 2.2e-16,
+    # identical hit@1 everywhere, and MRR identical except one query at n=3 where the answer
+    # ties with another word and the two disagree on tie order (0.9167 vs 0.9168)
+    INDEX_METRICS = {
+        'nmd n=1': dict(n=(1,)),
+        'nmd n=2': dict(n=(2,)),
+        'nmd n=3': dict(n=(3,)),
+        'nmd n=4': dict(n=(4,)),
+        'nmd n=(1,2)': dict(n=(1, 2)),
+        'nmd n=(2,3)': dict(n=(2, 3)),
+        'nmd n=(2,4)  [README default]': dict(n=(2, 4)),
+        'nmd n=(1,2,4)': dict(n=(1, 2, 4)),
+        # ⚠ these three are not quite the same formula the pairwise `weighted_nmd` below
+        # computes: V7 smooths idf as log((V + 1) / df) where weighted_nmd uses the unsmoothed
+        # log(V / df). measured 2026-09-05 the difference changed nothing -- all three rows
+        # reproduced the pre-port numbers exactly (0.896/0.921/0.961, 0.870/0.898/0.948,
+        # 0.532/0.622/0.818) because log(V/df) and log((V+1)/df) rank identically at this
+        # vocabulary size. expect them to diverge on a small vocabulary, where +1 is a larger
+        # relative shift, or at a high exponent that amplifies it
+        'nmd n=2 + idf^1': dict(n=(2,), idf_exponent=1.0),
+        'nmd n=2 + idf^2': dict(n=(2,), idf_exponent=2.0),
+        'nmd n=2 + idf^6': dict(n=(2,), idf_exponent=6.0),
+    }
+    PAIRWISE_METRICS = {
         'tf-idf cosine n=2': lambda a, b: cosine_tfidf(a, b, 2),
         'tf-idf cosine n=3': lambda a, b: cosine_tfidf(a, b, 3),
         'tf-idf cosine n=2, idf^2': lambda a, b: cosine_tfidf(a, b, 2, p=2.0),
@@ -126,19 +146,36 @@ def main(dict_size=8000, num_queries=250, seed=0):
         'difflib ratio': lambda a, b: SequenceMatcher(None, a, b).ratio(),
     }
 
-    print(f'\n{"metric":<32} {"hit@1":>8} {"MRR":>8} {"hit@10":>8} {"sec":>7}')
-    for name, metric in METRICS.items():
+    n_q = len(queries)
+    print(f'\n{"metric":<32} {"hit@1":>8} {"MRR":>8} {"hit@10":>8} {"build":>7} {"sec":>7}')
+    for name, kwargs in INDEX_METRICS.items():
+        t0 = time.perf_counter()
+        rank = build_ranker(dictionary, **kwargs)
+        build_sec = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        hits = rr = top10 = 0
+        for query, answer in queries:
+            ranked = [word for word, _score in rank(query)]
+            # a word sharing no n-gram with the query never enters the candidate set; pairwise
+            # it would have scored 0 and sorted last, so treat it as unranked
+            position = ranked.index(answer) + 1 if answer in ranked else None
+            hits += position == 1
+            rr += 1 / position if position else 0.0
+            top10 += bool(position and position <= 10)
+        print(f'{name:<32} {hits / n_q:>8.3f} {rr / n_q:>8.3f} {top10 / n_q:>8.3f} '
+              f'{build_sec:>7.1f} {time.perf_counter() - t0:>7.1f}')
+
+    for name, metric in PAIRWISE_METRICS.items():
         t0 = time.perf_counter()
         hits = rr = top10 = 0
         for query, answer in queries:
             scored = sorted(((metric(query, word), word) for word in dictionary), key=lambda x: -x[0])
-            rank = next(i for i, (_, word) in enumerate(scored, 1) if word == answer)
-            hits += rank == 1
-            rr += 1 / rank
-            top10 += rank <= 10
-        n_q = len(queries)
+            rank_position = next(i for i, (_, word) in enumerate(scored, 1) if word == answer)
+            hits += rank_position == 1
+            rr += 1 / rank_position
+            top10 += rank_position <= 10
         print(f'{name:<32} {hits / n_q:>8.3f} {rr / n_q:>8.3f} {top10 / n_q:>8.3f} '
-              f'{time.perf_counter() - t0:>7.1f}')
+              f'{"-":>7} {time.perf_counter() - t0:>7.1f}')
 
 
 if __name__ == '__main__':

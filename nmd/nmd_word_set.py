@@ -73,7 +73,7 @@ class WordSet(MutableSet[str]):
                  *,  # Force keyword-only arguments
                  case_sensitive: bool = False,
                  unicode_normalizer: UnicodeNormalizer = normalize_nfc,
-                 ngram_sizes: Union[int, Iterable[int]] = (2, 3, 4),
+                 ngram_sizes: Union[int, Iterable[int]] = (2, 4),
                  idf_exponent: float = 0.0
                  ) -> None:
         """
@@ -90,6 +90,14 @@ class WordSet(MutableSet[str]):
                Smaller values (e.g., 2) focus on local similarity/typos.
                Larger values (e.g., 4) focus on word structure.
                Using multiple sizes like `(2, 4)` (default) combines these.
+
+               Note this also selects the internal candidate filter: 3 if 3 is among the
+               sizes, else the smallest size, else disabled entirely once the smallest
+               size exceeds 4. Two consequences worth knowing:
+               - a query too short to produce one n-gram of the filter size returns no
+                 results at all, rather than falling back to a full scan
+               - with the filter disabled every word is scored, so completely dissimilar
+                 words come back with a score of 0.0 instead of being omitted
             idf_exponent: Weight each n-gram by `idf(gram) ** idf_exponent`, where
                `idf(gram) = log(len(self) / document_frequency(gram))`. Rare n-grams then
                count for more than common ones. Defaults to 0.0, which makes every weight
@@ -489,15 +497,22 @@ class WordSet(MutableSet[str]):
             iter_keys = query_keys if len(query_keys) <= len(word_keys) else word_keys
             check_dict = word_ngrams_pos if len(query_keys) <= len(word_keys) else query_ngrams_pos
 
-            for n_idx, n in enumerate(self._n_list):
-                norm_factor_for_n = query_num_grams[n_idx] + word_num_grams[n_idx]
-                if norm_factor_for_n == 0: continue
-
-                # Calculate similarity only for n-grams of size n
-                # This requires knowing which n-grams belong to which size n
-                # Current structure `ngrams_pos` mixes them. Refactor needed?
-                # Let's stick to the simpler combined approach for now: iterate all common grams
-                # and normalize at the end. This implicitly weights by n-gram frequency.
+            # this loop had no body -- it computed norm_factor_for_n and discarded it, once per n
+            # per candidate word, so it was both dead and a cost in the hottest loop here. it is
+            # left commented rather than deleted because it records an abandoned design: scoring
+            # and normalizing per n (as ApproxWordListV6 and V7 both do) rather than pooling every
+            # n into one `ngrams_pos` dict and normalizing once at the end. picking that back up
+            # means splitting `ngrams_pos` by n, which is the "Refactor needed?" below.
+            #
+            # for n_idx, n in enumerate(self._n_list):
+            #     norm_factor_for_n = query_num_grams[n_idx] + word_num_grams[n_idx]
+            #     if norm_factor_for_n == 0: continue
+            #
+            #     # Calculate similarity only for n-grams of size n
+            #     # This requires knowing which n-grams belong to which size n
+            #     # Current structure `ngrams_pos` mixes them. Refactor needed?
+            #     # Let's stick to the simpler combined approach for now: iterate all common grams
+            #     # and normalize at the end. This implicitly weights by n-gram frequency.
 
             # Calculate total similarity contribution across all Ns
             if weights is None:
@@ -560,13 +575,21 @@ class WordSet(MutableSet[str]):
         # final_candidates.sort()  # Sort by final score (descending similarity)
 
         # Prepare output
+        # min_similarity is applied to the score this method actually returns -- the normalized
+        # approximate similarity, which is already clamped to [0, 1] above. it used to be
+        # validated and then silently ignored, because the only code that applied it lived in
+        # the exact-rescoring block commented out above, so a caller asking for >= 0.99 got
+        # whatever the top k happened to be
         results: List[Tuple[str, float]] = []
-        # for i in range(min(k, len(final_candidates))):
-        #     final_score_neg, word_id, approx_score_neg = final_candidates[i]
-        for i in range(min(k, len(candidate_approx_scores))):
-            approx_score_neg, word_id = candidate_approx_scores[i]
-            original_word = self._vocab_id_to_original[word_id]
-            results.append((original_word, -approx_score_neg))  # Return positive score
+        for approx_score_neg, word_id in candidate_approx_scores:
+            if len(results) >= k:
+                break
+            score = -approx_score_neg  # Return positive score
+            # the list is sorted best-first, so the first result under the threshold means every
+            # remaining one is under it too
+            if min_similarity is not None and score < min_similarity:
+                break
+            results.append((self._vocab_id_to_original[word_id], score))
 
         return results
 

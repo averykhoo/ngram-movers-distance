@@ -15,7 +15,7 @@ Conda env named after the repo folder:
 
 ```bash
 "C:/Users/user/anaconda3/envs/ngram-movers-distance/python.exe" -m pytest -q
-# 495 passed, 1 xfailed (2026-09-05)
+# 537 passed, 1 xfailed (2026-09-05)
 ```
 
 Installed and used: `numpy` 2.2.4, `scipy` 1.15.2, `pyroaring`, `regex`. `numba` 0.61.2 is
@@ -72,6 +72,30 @@ get fixed.
    clamp makes `TestShortWordDenominatorClamp` raise. Neither fix changes any score on the
    `n=(2, 4)` default, where the old and new counts agree for every non-empty word.
 
+15. **Fixed: `WordSet.find_similar(min_similarity=...)` was validated and then ignored.** The
+    only code applying it was inside the commented-out exact-rescoring block, so asking for
+    `>= 0.99` returned whatever the top k happened to be. It now filters on the score the
+    method actually returns (the normalized approximate similarity, already clamped to
+    `[0, 1]`), breaking early since the list is sorted best-first.
+16. **Fixed: `WordSet`'s default `ngram_sizes` was `(2, 3, 4)` while its docstring said
+    `(2, 4)`.** Changed the code to match the docs. ⚠ This also moves `_effective_filter_n`
+    from 3 to 2, because the filter is `3 if 3 in n_list else min(n_list)`. The filter is
+    therefore less selective: more candidates get scored (slower) but recall goes up — a
+    1-character query returned nothing at all under the old default and now returns matches.
+17. **The no-op loop in `find_similar` is commented out, not deleted.** It computed
+    `norm_factor_for_n` and discarded it, once per n per candidate word. It is left in place
+    because it records an abandoned design — scoring and normalizing per n, as V6 and V7 both
+    do, rather than pooling every n into one `ngrams_pos` dict. Picking that up means splitting
+    `ngrams_pos` by n.
+18. **`ApproxWordListV6` now calls `emd_1d_fast`** too, not just `nmd_core`. Verified by
+    dumping top-5 lookups for 8 queries x 4 n-lists over a 4000-word vocabulary in two separate
+    processes (not by rebinding a global): **0 ranking differences**, largest score difference
+    1.8e-15 — summation-order noise, since `emd_1d_fast` adds `(m - 1)` once where the dp
+    accumulates `1.0` that many times.
+19. **`build_system_prompt.py` deleted** from the repo root. It was untracked, unreferenced,
+    unrelated to nmd, and published as a gist (URL in its own docstring), so this was not the
+    only copy. No `system prompt.txt` existed.
+
 ### Deliberately not doing, keep documented
 
 4. **Cross-call n-gram cache for `nmd_bow`.** Measured at only ~1.2x on top of what landed
@@ -98,12 +122,15 @@ get fixed.
 
 ### Still open
 
-10. **`nmd/nmd_word_set.py` core scoring is still unverified.** It is now 656 lines and does
-    have `tests/test_word_set_idf.py`, but that covers the idf path only — whether `find_similar`
-    is correct in general is untested. Note its `find_similar` has a large commented-out
-    exact-rescoring block, and returns the approximate score directly. It imports
-    `ApproxWordListV5` for the `__main__` benchmark at the bottom of the file (so the import is
-    live, not dead), which means that benchmark compares against a class carrying bug #7.
+10. **`nmd/nmd_word_set.py` core scoring is still unverified.** `tests/test_word_set.py` (new,
+    2026-09-05) now covers the API surface — `min_similarity`, defaults, set protocol, unicode,
+    edge cases — and `test_word_set_idf.py` covers idf, but **whether `find_similar`'s scoring
+    is correct is still untested**. It returns the approximate score directly, with the exact
+    rescoring pass commented out, and there is no parity test against
+    `ngram_movers_distance`. That parity test is the obvious next thing to write here.
+    It imports `ApproxWordListV5` for the `__main__` benchmark at the bottom of the file (so
+    the import is live, not dead), which means that benchmark compares against a class
+    carrying bug #7.
 11. `emd_1d_slow` is dead code using `itertools.combinations`, i.e. factorial blowup in the
     worst case. (`emd_1d_old` is no longer dead — `tests/test_emd_correctness.py` imports it
     as an oracle.)

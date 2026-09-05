@@ -9,6 +9,7 @@ from typing import Tuple
 from typing import Union
 
 from nmd.emd_1d import emd_1d_dp
+from nmd.emd_1d import emd_1d_fast
 from nmd.nmd_core import ngram_movers_distance
 
 
@@ -636,7 +637,10 @@ class ApproxWordListV6:
                         continue
                     word_scores = matches.setdefault(other_word_index, [0 for _ in range(len(self.__n_list))])
                     word_scores[n_idx] += len(locations) + len(other_locations)
-                    word_scores[n_idx] -= emd_1d_dp(locations, other_locations)
+                    # emd_1d_fast returns the same value as emd_1d_dp and falls back to it for
+                    # the general case; it only shortcuts when one side holds a single point,
+                    # which is ~98% of the calls made while scoring a vocabulary
+                    word_scores[n_idx] -= emd_1d_fast(locations, other_locations)
 
         # normalize scores
         for other_word_index, word_scores in matches.items():

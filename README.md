@@ -17,6 +17,30 @@
     * Values are 1-dimensional scalars
     * Values are always quantized
 
+# Installation and dependencies
+
+**`nmd` itself has no dependencies, and is meant to stay that way.** `import nmd` gives you
+the two things that are pure python, and pulls in nothing third-party:
+
+```python
+from nmd import ngram_movers_distance  # the metric
+from nmd import WordList               # the dictionary index
+```
+
+Everything else is a deliberate opt-in: the extra modules are *not* exported from the `nmd`
+namespace, so installing the package never obliges you to install their dependencies. Import
+them by their full path and install what they need yourself:
+
+| import | needs | what it is for |
+|---|---|---|
+| `nmd.nmd_index_v7.ApproxWordListV7` | `numpy` | same index as `WordList`, ~20-29x faster lookups, ~11-14x less memory |
+| `nmd.nmd_bow.bow_ngram_movers_distance` | `scipy` | compare two sequences of tokens |
+| `nmd.nmd_segments.segment_movers_distance` | `scipy`, `numpy` | as above, but tolerant of split / merged words |
+| `nmd.nmd_word_set.WordSet` | `pyroaring`, `regex` | a mutable, set-like container (`add` / `discard` / `in`) with unicode normalization |
+
+This is why `pyproject.toml` declares no `dependencies` and no extras. If you want the fast
+index, `pip install numpy` alongside `nmd`.
+
 # Usage
 
 ## `ngram_movers_distance()`
@@ -165,20 +189,36 @@ For more details about the tests, see the [tests/README.md](tests/README.md) fil
 
 # known bugs in the older index classes
 
-kept as-is for now, since this repo is mostly experimental and the old versions are worth
-keeping around for comparison. `ApproxWordListV7` has none of these.
+`ApproxWordListV3` and `ApproxWordListV5` are **frozen**: they are kept unchanged for
+comparison against the versions that replaced them, and their bugs are documented rather than
+fixed. `ApproxWordListV6` (the shipped `WordList`) and `ApproxWordListV7` are not frozen, and
+have none of these.
+
+still present, in the frozen classes only:
 
 * `ApproxWordListV3.vocabulary` is `return sorted(self.vocabulary)` -- infinite recursion,
   `RecursionError` on any access
 * `ApproxWordListV5.lookup(invert=False)` returns `normalize - match_score`, i.e. bool
   arithmetic, so distances come out negative and sorted worst-first. it also returns
   `top_k * 2` results instead of `top_k`
-* `ApproxWordListV6.lookup()` raises `ZeroDivisionError` for any query of length `n - 2`
-  (e.g. a 2-character query when 4-grams are indexed), because that produces exactly one
-  n-gram and the location denominator `len(n_grams) - 1` is zero
+* `ApproxWordListV5.lookup()` raises `ZeroDivisionError` for a query of length `n - 2`, as V6
+  used to (below)
 * `num_grams()` disagrees with `get_n_grams()` in two places: it over-counts by 2 at `n=1`
   (adding START/END flags that `get_n_grams` omits for 1-grams), and it returns a negative
-  count when the word is shorter than `n - 2`
+  count once the word is shorter than `n - 3`. it is still called by V3 and V5;
+  `num_n_grams()` is the corrected version, and is what V6 and V7 use
+
+fixed 2026-09-05 in `ApproxWordListV6`, i.e. in `WordList` (see `tests/test_index_v6.py`):
+
+* `lookup()` raised `ZeroDivisionError` for any query of length `n - 2` (e.g. a 2-character
+  query when 4-grams are indexed), because that produces exactly one n-gram and the location
+  denominator `len(n_grams) - 1` is zero. `add_word()` had always handled this case; only the
+  lookup path had not
+* normalization used the `num_grams()` above, so at `n=1` every denominator was 2 too large
+  (a word matched against itself scored 0.714 rather than 1.0)
+
+neither fix changes any score on the documented `n=(2, 4)` default, where `num_grams()` and
+`num_n_grams()` agree for every non-empty word.
 
 # todo
 

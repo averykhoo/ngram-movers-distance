@@ -31,10 +31,37 @@ def get_n_grams(word: str,
 
 @lru_cache(maxsize=0xFFFF)
 def num_grams(len_word, n, num_flag_chars=2) -> int:
+    """
+    FROZEN, and wrong in two ways -- use `num_n_grams` instead
+
+    kept only because `ApproxWordListV3` and `ApproxWordListV5` are frozen for comparison and
+    still call it (and `tests/test_index_v7.py` pins the disagreement as a regression guard).
+    it does not agree with `get_n_grams`:
+
+    * at n == 1 it over-counts by 2, adding the START/END flags that `get_n_grams` never adds
+    * it goes negative once the word is shorter than n - 3, which corrupts a normalized score
+      into a negative number rather than clamping to "no n-grams"
+
+    `ApproxWordListV6` -- the shipped `WordList` -- used to call this too; it now uses
+    `num_n_grams`, so neither bug reaches the default code path any more
+    """
     if n > 1:
         return len_word + num_flag_chars + 1 - n
     else:
         return len_word + num_flag_chars
+
+
+def num_n_grams(len_word: int, n: int) -> int:
+    """
+    number of n-grams a word of this length produces, always equal to `len(get_n_grams(word, n))`
+
+    the corrected replacement for `num_grams` above. identical to `nmd_index_v7.num_n_grams`,
+    duplicated rather than imported because that module needs numpy and this one must stay
+    dependency-free; `tests/test_index_v7.py` checks both against `get_n_grams` directly
+    """
+    if n > 1:
+        return max(0, len_word + 3 - n)
+    return len_word
 
 
 def mean(vec, dim):
@@ -417,6 +444,12 @@ class ApproxWordListV5:
 
 
 class ApproxWordListV6:
+    """
+    the version exported as `WordList`, so unlike V3 and V5 this one is not frozen: it uses the
+    corrected `num_n_grams` rather than `num_grams`, and its lookup handles a query that produces
+    exactly one n-gram instead of dividing by zero
+    """
+
     def __init__(self,
                  n: Union[int, Iterable[int]] = (2, 4),
                  case_sensitive: bool = False,
@@ -442,7 +475,7 @@ class ApproxWordListV6:
         self.__word_indices: Dict[str, int] = dict()  # word -> word_index
         self.__word_list: List[str] = []  # word_index -> word
         self.__word_lens: List[int] = []  # word_index -> len(word)
-        self.__word_num_grams: List[Tuple[int]] = []  # word_index -> [num_grams(len(word), n) for n in self.__n_list]
+        self.__word_num_grams: List[Tuple[int]] = []  # word_index -> [num_n_grams(len(word), n) for n in n_list]
 
         # n-gram filter: n_gram -> {word_index, ...}
         self.__filter_n: int = filter_n
@@ -480,7 +513,7 @@ class ApproxWordListV6:
         _idx = self.__word_indices[word] = len(self.__word_list)
         self.__word_list.append(word)
         self.__word_lens.append(len(word))
-        self.__word_num_grams.append(tuple(num_grams(len(word), n) for n in self.__n_list))
+        self.__word_num_grams.append(tuple(num_n_grams(len(word), n) for n in self.__n_list))
 
         # double-check invariants before returning to make sure we didn't trigger some race condition
         assert len(self.__word_indices) == len(self.__word_list) == _idx + 1
@@ -555,7 +588,12 @@ class ApproxWordListV6:
                     if other_word_index not in min_scores:
                         min_scores[other_word_index] = [0] * len(self.__n_list)
                     if normalize:
-                        denominator = num_grams(len_word, n) + self.__word_num_grams[other_word_index][n_idx]
+                        # clamped away from zero: a word shorter than n - 2 produces no n-grams of
+                        # size n at all, so its numerator is zero and the exact divisor is
+                        # irrelevant -- we only need to not divide by it. this used to be
+                        # unreachable only by accident, because the old num_grams went negative
+                        denominator = max(1, num_n_grams(len_word, n)
+                                          + self.__word_num_grams[other_word_index][n_idx])
                         min_scores[other_word_index][n_idx] += min(count, other_count) / denominator
                     else:
                         min_scores[other_word_index][n_idx] += min(count, other_count)
@@ -581,8 +619,16 @@ class ApproxWordListV6:
         for n_idx, n in enumerate(self.__n_list):
             n_grams = get_n_grams(word, n)
             n_gram_locations = dict()
-            for idx, n_gram in enumerate(n_grams):
-                n_gram_locations.setdefault(n_gram, []).append(idx / (len(n_grams) - 1))
+            # a query of length exactly n - 2 produces exactly one n-gram, and dividing its
+            # position by len(n_grams) - 1 used to raise ZeroDivisionError. `add_word` always
+            # handled this case; only the lookup path did not. the lone n-gram sits at position
+            # 0, which is what both `add_word` and `ngram_movers_distance` assign it
+            if len(n_grams) > 1:
+                position_denominator = len(n_grams) - 1
+                for idx, n_gram in enumerate(n_grams):
+                    n_gram_locations.setdefault(n_gram, []).append(idx / position_denominator)
+            elif n_grams:
+                n_gram_locations[n_grams[0]] = [0]
 
             for n_gram, locations in n_gram_locations.items():
                 for other_word_index, other_locations in self.__ngram_positions.get(n_gram, []):
@@ -598,7 +644,9 @@ class ApproxWordListV6:
 
             # should take other word into account too
             if normalize:
-                norm_scores = [word_scores[n_idx] / (num_grams(len_word, n) + num_grams(other_len, n))
+                # clamped for the same reason as the bound above: an n for which neither word is
+                # long enough contributes a zero numerator, and must not divide by zero
+                norm_scores = [word_scores[n_idx] / max(1, num_n_grams(len_word, n) + num_n_grams(other_len, n))
                                for n_idx, n in enumerate(self.__n_list)]
                 matches[other_word_index] = norm_scores
             else:

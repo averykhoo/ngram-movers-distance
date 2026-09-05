@@ -1,4 +1,8 @@
-from nmd.emd_1d import emd_1d_dp
+# emd_1d_fast returns exactly the same value as emd_1d_dp -- it just skips building the dp
+# table when one side holds a single point, which is almost every call in practice. it is
+# pure python and lives in the same module, so this costs the package no new dependency.
+# equivalence is pinned by tests/test_bow.py::TestEmd1dFast
+from nmd.emd_1d import emd_1d_fast
 
 
 def ngram_movers_distance(word_1: str,
@@ -69,7 +73,7 @@ def ngram_movers_distance(word_1: str,
     for n_gram, locations_1 in n_gram_locations_1.items():
         if n_gram in n_gram_locations_2:
             similarity += len(locations_1) + len(n_gram_locations_2[n_gram])
-            similarity -= emd_1d_dp(locations_1, n_gram_locations_2[n_gram])
+            similarity -= emd_1d_fast(locations_1, n_gram_locations_2[n_gram])
 
     # return similarity or distance, optionally normalized
     output = similarity if invert else num_grams_1 + num_grams_2 - similarity

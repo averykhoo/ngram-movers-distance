@@ -182,6 +182,29 @@ class TestGeoDenominator:
         assert score == pytest.approx(2 * grams / (2 * math.sqrt(grams * grams)), abs=1e-12)
 
 
+class TestDefaults:
+    """
+    the shipped defaults, pinned
+
+    `normalize` defaults to True on V7 and False on V6 / ngram_movers_distance. that divergence
+    is deliberate and measured, so it should fail loudly if someone "fixes" it for consistency
+    """
+
+    def test_normalize_defaults_to_true(self, index):
+        assert index.lookup('banana', top_k=5) == index.lookup('banana', top_k=5, normalize=True)
+        # ... and the un-normalized path is genuinely different, so the assertion above has teeth
+        assert index.lookup('banana', top_k=5) != index.lookup('banana', top_k=5, normalize=False)
+
+    def test_normalized_scores_are_bounded(self, index):
+        """the reason normalize=True is a sane default to hand someone: scores mean something"""
+        for _word, score in index.lookup('banana', top_k=len(REPEAT_WORDS)):
+            assert 0.0 <= score <= 1.0
+
+    def test_other_defaults_are_the_inert_ones(self, index):
+        results = index.lookup('banana', top_k=5)
+        assert results == index.lookup('banana', top_k=5, position_weight=1.0, denominator='dice')
+
+
 class TestValidation:
     """out-of-range values are refused rather than clamped -- see the lookup docstring"""
 

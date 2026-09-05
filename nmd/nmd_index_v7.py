@@ -564,7 +564,7 @@ class ApproxWordListV7:
                top_k: int = 5,
                dim: Union[int, float] = 1,
                invert: bool = True,
-               normalize: bool = False,
+               normalize: bool = True,
                position_weight: float = 1.0,
                denominator: str = 'dice',
                ) -> List[Tuple[str, float]]:
@@ -586,7 +586,19 @@ class ApproxWordListV7:
         :param top_k: how many results to return
         :param dim: exponent of the power mean used to combine per-n scores (1 == plain mean)
         :param invert: return similarity (default) instead of distance
-        :param normalize: return a score between 0 and 1
+        :param normalize: divide by the combined n-gram total, giving a score between 0 and 1.
+            defaults to True, unlike `ApproxWordListV6.lookup` and `ngram_movers_distance`, which
+            both default to False. an un-normalized score is a raw similarity sum and therefore
+            grows with candidate length, so leaving it off biases the ranking toward long
+            documents. measured over six retrieval benchmarks at the default `idf_exponent`
+            (experiments/index_param_search.py, 2026-09-06) turning it on gained +0.339 MAP on
+            long documents, +0.195 on product names, and +0.050 to +0.073 on typo correction,
+            helping in 108 of 120 paired comparisons.
+
+            ⚠ it is not a free win at every setting, because `normalize` and `idf_exponent` both
+            counteract length bias and applying both over-corrects. on product names it is worth
+            +0.145 MAP at `idf_exponent=0` but -0.079 at `idf_exponent=3`. if you raise the
+            exponent, re-check whether you still want this on
         :param position_weight: how much of the positional displacement to charge for, in
             [0, 1]. an n-gram shared at counts (c1, c2) contributes
             `2 * min(c1, c2) - position_weight * displacement`, where `displacement` is the

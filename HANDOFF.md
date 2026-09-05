@@ -1,12 +1,62 @@
 # Handoff
 
-State as of `master` on 2026-09-05, one commit ahead of `origin/master`. The open-item list
-below was triaged with the owner on 2026-09-05; every item now carries a decision.
+State as of `master` on 2026-09-06. The open-item list below was triaged with the owner on
+2026-09-05; every item carries a decision.
 
 ⚠ The "What changed recently" table and the "Things worth knowing" section still describe the
 tree as of `cbde8e7`. Everything in `docs/bow-plan.md` parts 3-8 (segment mover's distance,
 the hyperparameter search, idf on both `WordSet` and V7, the all-metrics benchmark) landed
 after that and is **not** summarized here yet.
+
+## Session 2026-09-06: index parameter search
+
+**V7 gained two lookup knobs and flipped one default.** `position_weight` (how much of the
+positional displacement to charge, 0.0 == order-blind dice-multiset, 1.0 == nmd) and
+`denominator` (`dice` additive vs `geo` geometric). Both are pure read-path, so sweeping them
+needs no rebuild. `lookup(normalize=...)` now defaults to **True**, unlike V6 and
+`ngram_movers_distance`; that divergence is deliberate and pinned by
+`tests/test_index_v7_knobs.py::TestDefaults`.
+
+**Six retrieval benchmarks now exist**, in `experiments/index_param_search.py`: `typo`,
+`typo_ms`, `typo_hard`, `typo_brutal`, `abtbuy`, `ermagellan`. Real MAP and NDCG live in
+`experiments/ranking_metrics.py` -- neither existed anywhere in the tree before; every eval
+script inlined a `rank = next(...)` loop that took only the first relevant item's rank.
+Results are tracked CSVs under `experiments/results/`.
+
+**The headline result: the tasks split into two clusters that disagree on every knob.**
+
+| cluster | tasks | `n` | idf | dim | normalize | position_weight |
+|---|---|---|---|---|---|---|
+| short strings | typo, typo_ms, typo_hard, typo_brutal | (1, 2) | 0-0.5 | 2 | True | 1.0 |
+| product matching | abtbuy, ermagellan | (2, 3) | 3.0 | 1 | False | 0.0 |
+
+Best single compromise is `n=(1,2) idf=0.5 dim=2 normalize=True position_weight=1.0
+denominator='geo'` -- top of the six-task ranking, best mean rank (51.2/432) of the five-task
+one. Its worst rank is 234/432, on abtbuy. **The old default `n=(2,4) idf=0 dim=1
+normalize=False` ranks 334 / 161 / 99 / 94 / 98 of 432 across the five full-grid tasks**: not a
+compromise, just unchosen.
+
+⚠ **`normalize` and `idf_exponent` substitute for each other** -- both counteract length bias,
+so applying both over-corrects. On abtbuy `normalize=True` is worth +0.145 MAP at
+`idf_exponent=0` and **-0.079** at `idf_exponent=3`. Any future default change to one has to
+re-check the other.
+
+**The eval scripts now drive V7 instead of scoring pairwise** (`experiments/v7_ranking.py`).
+Verified identical against the pre-port code at matched seeds, except three
+`benchmark_all` task-A idf rows that differ in the third decimal because `make_metrics` fits idf
+over Abt+Buy while the index fits over Buy alone -- those are relabelled `[V7 idf]`.
+`benchmark_all` task A2, `baseline_eval` part B and `segment_eval` are **not** ported on
+purpose: they rerank 20 candidates, where building an index costs more than it saves.
+`benchmark_all` task B is not retrieval at all.
+
+⚠ **V7's "~98% of postings are single-occurrence" claim is short-word-specific.** Measured
+2026-09-06: 99.5% on typo (8-char), 92.3% on abtbuy (53-char), **78.8% on ermagellan
+(138-char)**. On long documents 21% of postings fall to the python dp fallback, which is why one
+`ermagellan` configuration costs 67s and an `n=(1,)` one costs 341s. If long documents ever
+matter, that fallback is the thing to vectorise.
+
+⚠ **`n=(1,)` is useless on long documents** -- MAP 0.008 on ermagellan, because every
+138-character document contains every letter. Unigrams only work when documents are short.
 
 ## Environment
 
@@ -159,6 +209,30 @@ get fixed.
     `(2, 4)` default by 11 points of hit@1 on typo correction, but unigrams have almost no
     selectivity as an index key. The suggested design — prune on 2- or 3-grams, rescore with
     `n=(1, 2)` — is not implemented anywhere, and the defaults are unchanged.
+
+    **Confirmed and strengthened 2026-09-06.** The finding survives real candidate generation
+    and MAP scoring, not just pairwise rescoring: `n=(1, 2)` is the best n-list on all four
+    typo benchmarks. It is also *still* the wrong index key — `n=(1,)` costs 341s per
+    configuration on `ermagellan` and scores MAP 0.008 there. So the split prune/rescore design
+    is now the highest-value unimplemented item, and it would need a second n-list parameter
+    (`rescore_n`) that V7 does not have.
+
+20. **`n` is doing two jobs and a grid search cannot separate them.** It selects candidates
+    *and* scores them, so a single sweep conflates "which n-grams make a good index key" with
+    "which make a good scorer". That is exactly what item 14 proposes splitting. Until it is
+    split, any recommended `n` is a compromise between the two roles rather than an optimum for
+    either.
+
+21. **`ermagellan` was only measured on a 19-configuration shortlist**, not the full 432-point
+    grid, because `n=(1,)` there costs 341s per configuration to measure noise. The six-task
+    aggregate therefore ranks 19 configurations; the five-task one ranks all 432. Both agree on
+    the winner, but do not quote a "rank N/19" as if it came from the full grid.
+
+22. **`idf_exponent`'s optimum on product matching is still at the grid edge.** abtbuy peaks at
+    the largest value swept (3.0 → 0.9500, 4.0 → 0.9467 so it may just have turned over), and
+    `docs/bow-plan.md` part 6 saw train AP still climbing at p=15. Part 6 also names three
+    guards that were never implemented and would matter at high exponents: an idf floor,
+    punctuation normalization, and fitting df on an external corpus.
 
 ## Things worth knowing before optimizing further
 

@@ -15,7 +15,7 @@ Conda env named after the repo folder:
 
 ```bash
 "C:/Users/user/anaconda3/envs/ngram-movers-distance/python.exe" -m pytest -q
-# 537 passed, 1 xfailed (2026-09-05)
+# 992 passed, 1 xfailed (2026-09-05)
 ```
 
 Installed and used: `numpy` 2.2.4, `scipy` 1.15.2, `pyroaring`, `regex`. `numba` 0.61.2 is
@@ -72,6 +72,30 @@ get fixed.
    clamp makes `TestShortWordDenominatorClamp` raise. Neither fix changes any score on the
    `n=(2, 4)` default, where the old and new counts agree for every non-empty word.
 
+10. **Closed: `nmd/nmd_word_set.py`'s core scoring is verified.** `tests/test_parity_with_nmd.py`
+    (new) scores every index against `ngram_movers_distance` recomputed from the raw strings,
+    over 2000 words of `experiments/words_en.txt` and 30 queries. Findings:
+
+    * `WordSet.find_similar` **is** exactly nmd (worst error 2.2e-16), but under a *pooled*
+      normalization: one ratio `sum_n similarity / sum_n n-gram count`, where V5/V6/V7 return
+      the mean of the per-n ratios. Both are correct; they are different aggregations, and they
+      differ by ~0.09 on short words, so `WordSet` and `WordList` are not expected to agree.
+    * V6 agrees bit-for-bit (0.0), V7 and V5 to summation noise (worst 3.6e-15). V5's *scores*
+      were never wrong — its frozen bugs are in the returned distance and top-k, not the math.
+    * V3 genuinely does not compute nmd (`max(c1, c2)` not `c1 + c2`, normalized by the query
+      alone); pinned as a freeze guard rather than fixed, per #6.
+    * With its lossy `filter_n=3` off, V6 returns the exhaustive top-5 exactly; so do V7 (no
+      prefilter) and `WordSet` (whose `min(n) == 2` filter is lossless, since any shared 4-gram
+      contains a shared 2-gram). Default V6 recovered 146/150 of the true top-5.
+    * Two divergences from nmd are documented and pinned, not fixed: `WordSet` keeps the
+      START/END markers at `n == 1`; and V6/V7 score a `0 / 0` normalization as 0.0 where nmd
+      falls back to string equality and returns 1.0 (identical words of length `<= n - 3`).
+
+    Sabotage-checked: `+ 1e-6` on each class's similarity accumulator turns exactly that
+    class's tests red (164 failures for V5+V6, 232 for V7+`WordSet`, none crossing over). Note
+    `nmd_word_set.py` still imports `ApproxWordListV5` for its `__main__` benchmark, which
+    therefore compares against a class carrying bug #7.
+
 15. **Fixed: `WordSet.find_similar(min_similarity=...)` was validated and then ignored.** The
     only code applying it was inside the commented-out exact-rescoring block, so asking for
     `>= 0.99` returned whatever the top k happened to be. It now filters on the score the
@@ -122,15 +146,6 @@ get fixed.
 
 ### Still open
 
-10. **`nmd/nmd_word_set.py` core scoring is still unverified.** `tests/test_word_set.py` (new,
-    2026-09-05) now covers the API surface — `min_similarity`, defaults, set protocol, unicode,
-    edge cases — and `test_word_set_idf.py` covers idf, but **whether `find_similar`'s scoring
-    is correct is still untested**. It returns the approximate score directly, with the exact
-    rescoring pass commented out, and there is no parity test against
-    `ngram_movers_distance`. That parity test is the obvious next thing to write here.
-    It imports `ApproxWordListV5` for the `__main__` benchmark at the bottom of the file (so
-    the import is live, not dead), which means that benchmark compares against a class
-    carrying bug #7.
 11. `emd_1d_slow` is dead code using `itertools.combinations`, i.e. factorial blowup in the
     worst case. (`emd_1d_old` is no longer dead — `tests/test_emd_correctness.py` imports it
     as an oracle.)

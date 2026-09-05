@@ -20,7 +20,8 @@ from typing import Hashable
 from typing import List
 from typing import Sequence
 
-__all__ = ('reciprocal_rank', 'hit_at_k', 'recall_at_k', 'average_precision', 'ndcg_at_k')
+__all__ = ('reciprocal_rank', 'hit_at_k', 'recall_at_k', 'precision_at_k', 'r_precision',
+           'average_precision', 'ndcg_at_k')
 
 
 def reciprocal_rank(ranked: Sequence[Hashable], relevant: Collection[Hashable]) -> float:
@@ -65,6 +66,46 @@ def recall_at_k(ranked: Sequence[Hashable], relevant: Collection[Hashable], k: i
     if not relevant:
         return 0.0
     return sum(1 for item in ranked[:k] if item in relevant) / len(relevant)
+
+
+def precision_at_k(ranked: Sequence[Hashable], relevant: Collection[Hashable], k: int) -> float:
+    """
+    fraction of the top k that is relevant
+
+    the denominator is k even when fewer than k results came back, so a system that returns two
+    perfect results and stops does not out-score one that returns five. that is the right
+    convention here because `top_k` is fixed across a sweep: a short list means the index pruned
+    everything else away, not that the task had nothing more to offer
+
+    >>> precision_at_k(['a', 'x', 'b'], {'a', 'b'}, k=2)
+    0.5
+    >>> precision_at_k(['a', 'b'], {'a', 'b'}, k=4)
+    0.5
+    """
+    if k <= 0:
+        return 0.0
+    relevant = set(relevant)
+    return sum(1 for item in ranked[:k] if item in relevant) / k
+
+
+def r_precision(ranked: Sequence[Hashable], relevant: Collection[Hashable]) -> float:
+    """
+    precision at k == len(relevant), the cutoff at which precision and recall coincide
+
+    self-calibrating across queries with different numbers of right answers, which is why it is
+    worth having alongside a fixed-cutoff precision on a task where that count varies
+
+    >>> r_precision(['a', 'b', 'x'], {'a', 'b'})
+    1.0
+    >>> r_precision(['a', 'x', 'b'], {'a', 'b'})
+    0.5
+    >>> r_precision(['x', 'a'], {'a'})
+    0.0
+    """
+    relevant = set(relevant)
+    if not relevant:
+        return 0.0
+    return precision_at_k(ranked, relevant, k=len(relevant))
 
 
 def average_precision(ranked: Sequence[Hashable], relevant: Collection[Hashable]) -> float:
@@ -148,17 +189,34 @@ def _self_check() -> None:
     assert ndcg_at_k(['x', 'a'], {'a'}, k=1) == 0.0
     assert hit_at_k(['x', 'a'], {'a'}, k=1) == 0.0
     assert recall_at_k(['x', 'a'], {'a'}, k=1) == 0.0
+    assert precision_at_k(['x', 'a'], {'a'}, k=1) == 0.0
+    # precision@k divides by k, not by the length of a short result list
+    assert precision_at_k(['a'], {'a'}, k=5) == 0.2
+    assert precision_at_k(['a'], {'a'}, k=1) == 1.0
+    # r-precision follows the size of the relevant set, not a fixed cutoff
+    assert r_precision(['a', 'b', 'x'], {'a', 'b'}) == 1.0
+    assert r_precision(['a', 'x', 'b'], {'a', 'b'}) == 0.5
+    # ... so a ranking that is perfect for one query size is not automatically perfect for another
+    assert r_precision(['a', 'x'], {'a'}) == 1.0
+    assert r_precision(['a', 'x'], {'a', 'b'}) == 0.5
     # empty relevant set is 0 everywhere rather than a ZeroDivisionError
     for fn in (lambda: average_precision(['a'], set()),
                lambda: ndcg_at_k(['a'], set(), k=1),
                lambda: recall_at_k(['a'], set(), k=1),
+               lambda: precision_at_k(['a'], set(), k=1),
+               lambda: r_precision(['a'], set()),
                lambda: reciprocal_rank(['a'], set())):
         assert fn() == 0.0
     # an empty ranked list is 0 everywhere
     empty: List[Hashable] = []
     assert average_precision(empty, {'a'}) == 0.0
     assert ndcg_at_k(empty, {'a'}, k=5) == 0.0
+    assert precision_at_k(empty, {'a'}, k=5) == 0.0
+    assert r_precision(empty, {'a'}) == 0.0
     assert reciprocal_rank(empty, {'a'}) == 0.0
+    # a non-positive cutoff is 0, not a ZeroDivisionError
+    assert precision_at_k(['a'], {'a'}, k=0) == 0.0
+    assert ndcg_at_k(['a'], {'a'}, k=0) == 0.0
     print('ranking_metrics self-check: ok')
 
 

@@ -1,14 +1,21 @@
 # Handoff
 
-State as of commit `cbde8e7` on `master`. Working tree clean, local and remote in sync.
+State as of `master` on 2026-09-05, one commit ahead of `origin/master`. The open-item list
+below was triaged with the owner on 2026-09-05; every item now carries a decision.
+
+⚠ The "What changed recently" table and the "Things worth knowing" section still describe the
+tree as of `cbde8e7`. Everything in `docs/bow-plan.md` parts 3-8 (segment mover's distance,
+the hyperparameter search, idf on both `WordSet` and V7, the all-metrics benchmark) landed
+after that and is **not** summarized here yet.
 
 ## Environment
 
 Conda env named after the repo folder:
-`C:\Users\avery\anaconda3\envs\ngram-movers-distance\python.exe`
+`C:\Users\user\anaconda3\envs\ngram-movers-distance\python.exe`
 
 ```bash
-"C:/Users/avery/anaconda3/envs/ngram-movers-distance/python.exe" -m pytest -q   # 192 passing
+"C:/Users/user/anaconda3/envs/ngram-movers-distance/python.exe" -m pytest -q
+# 495 passed, 1 xfailed (2026-09-05)
 ```
 
 Installed and used: `numpy` 2.2.4, `scipy` 1.15.2, `pyroaring`, `regex`. `numba` 0.61.2 is
@@ -24,73 +31,92 @@ installed but **nothing in `nmd/` imports it** — it was only used to evaluate 
 Benchmarks and profiling scripts behind those numbers are in `.scratch/` (gitignored, see
 `.scratch/README.md` for which script proved what).
 
+## The standing constraint, decided 2026-09-05
+
+**`nmd` stays dependency-free, and the default path stays pure python.** `import nmd` exports
+exactly `ngram_movers_distance` and `WordList` and pulls in nothing third-party — verified by
+importing it with `numpy` / `scipy` / `pyroaring` / `regex` / `numba` blocked at the meta-path,
+which loads zero of them. Anything needing a third-party package (V7, `nmd_bow`,
+`nmd_segments`, `WordSet`) is reached by its full module path and is documented in the README's
+dependency table, **not** exported from `nmd/__init__.py` and **not** added to
+`pyproject.toml` as a dependency or an extra.
+
+**The old index classes are frozen, not deleted.** V3 and V5 keep their bugs on purpose, for
+comparison. V6 is the shipped `WordList` and is therefore *not* frozen — bugs that reach it
+get fixed.
+
 ## Open items
 
-### Decisions waiting on you
+### Closed on 2026-09-05
 
-1. **Should `WordList` point at V7?** `nmd/__init__.py` still has `WordList = ApproxWordListV6`.
-   Flipping it makes `numpy` a hard dependency of a package that currently has none. Left as
-   opt-in (`from nmd.nmd_index_v7 import ApproxWordListV7`), mirroring how `nmd_bow` handles
-   scipy. Not flipped without a call from you.
+1. **Should `WordList` point at V7?** No — that would make numpy a hard dependency. Stays
+   `ApproxWordListV6`; V7 remains opt-in via `from nmd.nmd_index_v7 import ApproxWordListV7`.
+2. **Should `pyproject.toml` declare dependencies or extras?** No. Declaring none is correct
+   and intended. The optional modules and what they each need are now a table in the README
+   instead. (`__version__` is still `0.0.6` and still needs bumping before any `flit publish`
+   — that is the one part of this item left open, see #13.)
+3. **`nmd_core` now calls `emd_1d_fast`** instead of `emd_1d_dp`. Approved because
+   `emd_1d_fast` is pure python and lives in the same module, so it costs no dependency.
+   Same values, ~1.15x on pairwise comparisons; equivalence pinned by
+   `tests/test_bow.py::TestEmd1dFast`.
+8. **Fixed: `ApproxWordListV6.lookup()` `ZeroDivisionError` for a query of length `n - 2`.**
+   `add_word()` had always guarded this; only the lookup path had not.
+9. **Fixed: `num_grams()` on the default path.** V6 now uses a new corrected `num_n_grams()`
+   in the same module. `num_grams()` itself is untouched, because V3, V5 and
+   `tests/test_index_v7.py` all still depend on its behaviour.
 
-2. **Packaging declares no dependencies at all.** `pyproject.toml` has no `dependencies` key,
-   but `nmd_bow` needs `scipy`, `nmd_index_v7` needs `numpy`, and `nmd_word_set` needs
-   `pyroaring` + `regex`. Anyone installing from PyPI and following the README hits an
-   ImportError. Optional extras would fix it:
-   ```toml
-   [project.optional-dependencies]
-   bow = ["scipy"]
-   index = ["numpy"]
-   wordset = ["pyroaring", "regex"]
-   ```
-   Also `__version__` is still `0.0.6` and was **not** bumped for either commit — needs
-   incrementing before `flit publish`.
+   Both fixes are pinned by `tests/test_index_v6.py`, which was re-run against the pre-fix
+   tree to confirm exactly four of its tests actually go red (listed in that file's docstring).
+   ⚠ Correcting the counts made a `0 / 0` reachable that the old *negative* counts had been
+   masking, so the normalizing denominators are now clamped with `max(1, ...)`; deleting either
+   clamp makes `TestShortWordDenominatorClamp` raise. Neither fix changes any score on the
+   `n=(2, 4)` default, where the old and new counts agree for every non-empty word.
 
-### Cheap wins, not done
-
-3. **`nmd_core.ngram_movers_distance` still calls `emd_1d_dp`.** Switching it to the new
-   `emd_1d_fast` is a one-line import change, measured at ~1.15x on pairwise comparisons.
-   Left alone because the request was scoped to the bow path. `emd_1d_fast` is proven
-   equivalent to `emd_1d_dp` in `tests/test_bow.py::TestEmd1dFast` (exhaustive over a
-   quantized grid, random input, and outside the unit interval).
+### Deliberately not doing, keep documented
 
 4. **Cross-call n-gram cache for `nmd_bow`.** Measured at only ~1.2x on top of what landed
    (79.5% hit rate over a 3000-candidate sweep), so it was deliberately left out — it is the
    same globally-scoped pattern that was removed from `get_n_grams`. If it ever matters, the
    right shape is an explicit indexed API over the candidate corpus, not a hidden global.
-   Prototype: `.scratch/bench_bow_many.py`.
+   Prototype: `.scratch/bench_bow_many.py`. **Reaffirmed 2026-09-05: skip, keep written down.**
 
 5. **numba kernel for the bow cost matrix.** Prototype in `.scratch/kernel_bow.py`, correct
    and verified to 1.8e-15. **Not landed on purpose**: 4.5-9x above ~20 words per bag, but a
    *loss* (0.8x) at 5 words, which is the README's own use case. Costs ~143 MB of dependency
    (numba 25 + llvmlite 86 + numpy 32), a `numpy<2.3` pin, and ~1.8s JIT compile on first
-   call. Only worth it for document-length token sequences.
-
-### Known bugs, documented but deliberately not fixed
-
-Kept for archaeological reasons — the old index classes are intentionally frozen. All are
-listed under "known bugs in the older index classes" in `README.md`, and V7 has none of them.
+   call. Only worth it for document-length token sequences. **Reaffirmed 2026-09-05: skip,
+   keep documented.** Also now blocked by the dependency-free constraint above.
 
 6. `ApproxWordListV3.vocabulary` is `return sorted(self.vocabulary)` — infinite recursion.
+   **Won't fix**: V3 is frozen, is not reachable from the default namespace, and adds nothing
+   over V5/V6 (it predates the pruning bound and does not even use the same scoring formula).
 7. `ApproxWordListV5.lookup(invert=False)` returns `normalize - match_score`, i.e. bool
    arithmetic, so distances are negative and sorted worst-first; also returns `top_k * 2`
-   results instead of `top_k`.
-8. `ApproxWordListV6.lookup()` raises `ZeroDivisionError` for any query of length `n - 2`
-   (e.g. a 2-char query when 4-grams are indexed). **This one affects the shipped
-   `WordList`**, so it is the most likely to bite a real user.
-9. `num_grams()` disagrees with `get_n_grams()`: over-counts by 2 at `n=1`, and returns a
-   negative count when the word is shorter than `n - 2`.
+   results instead of `top_k`. **Won't fix**: frozen. V5 also still raises `ZeroDivisionError`
+   for a query of length `n - 2` (confirmed 2026-09-05) — that is the same bug #8 was, and it
+   stays in V5 on purpose.
 
-### Not looked at
+### Still open
 
-10. **`nmd/nmd_word_set.py` has no tests and was never reviewed this session.** It imports
-    `ApproxWordListV5`, which carries bug #7 above. It is ~530 lines and imports fine, but
-    whether `WordSet` is correct is unverified.
-11. `emd_1d_slow` and `emd_1d_old` are dead code using `itertools.combinations`, i.e.
-    factorial blowup in the worst case. Nothing imports them.
-12. Pre-existing README todos, untouched: `remove()`/`discard()` for a set-like container
-    (needs index compaction), prefix lookup, a `min_similarity` filter on lookup, trying
-    cython, and `from nmd import nmd` returning a module rather than a function.
+10. **`nmd/nmd_word_set.py` core scoring is still unverified.** It is now 656 lines and does
+    have `tests/test_word_set_idf.py`, but that covers the idf path only — whether `find_similar`
+    is correct in general is untested. Note its `find_similar` has a large commented-out
+    exact-rescoring block, and returns the approximate score directly. It imports
+    `ApproxWordListV5` for the `__main__` benchmark at the bottom of the file (so the import is
+    live, not dead), which means that benchmark compares against a class carrying bug #7.
+11. `emd_1d_slow` is dead code using `itertools.combinations`, i.e. factorial blowup in the
+    worst case. (`emd_1d_old` is no longer dead — `tests/test_emd_correctness.py` imports it
+    as an oracle.)
+12. Pre-existing README todos, untouched: `remove()`/`discard()` on the V7 index (needs index
+    compaction; `WordSet` already has them), prefix lookup, a `min_similarity` filter on
+    lookup, trying cython, and `from nmd import nmd` returning a module rather than a function.
+13. **`__version__` is `0.0.6` and has not been bumped** for anything since. Needs
+    incrementing before `flit publish`; not bumped unprompted, since it is only meaningful at
+    publish time.
+14. **The Part 7 finding has no corresponding code change.** `n=(1, 2)` beats the README's
+    `(2, 4)` default by 11 points of hit@1 on typo correction, but unigrams have almost no
+    selectivity as an index key. The suggested design — prune on 2- or 3-grams, rescore with
+    `n=(1, 2)` — is not implemented anywhere, and the defaults are unchanged.
 
 ## Things worth knowing before optimizing further
 

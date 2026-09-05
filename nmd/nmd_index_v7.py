@@ -244,9 +244,9 @@ class ApproxWordListV7:
             grams = n_grams(word, n)
             locations: Dict[str, List[float]] = dict()
             if len(grams) > 1:
-                denominator = len(grams) - 1
+                position_divisor = len(grams) - 1
                 for idx, n_gram in enumerate(grams):
-                    locations.setdefault(n_gram, []).append(idx / denominator)
+                    locations.setdefault(n_gram, []).append(idx / position_divisor)
             elif grams:
                 locations[grams[0]] = [0.0]
 
@@ -393,6 +393,8 @@ class ApproxWordListV7:
                             top_k: int,
                             normalize: bool,
                             dim: Union[int, float],
+                            position_weight: float = 1.0,
+                            denominator: str = 'dice',
                             ) -> Optional[Tuple[List[np.ndarray], np.ndarray]]:
         """
         returns (per-n similarity arrays, boolean candidate mask), or None if nothing matched
@@ -450,7 +452,7 @@ class ApproxWordListV7:
             counts.append(bincount)
 
         if normalize:
-            bound_parts = [counts[n_idx] / self._denominator(n_idx, query_totals[n_idx])
+            bound_parts = [counts[n_idx] / self._denominator(n_idx, query_totals[n_idx], denominator)
                            for n_idx in range(num_n)]
         else:
             bound_parts = counts
@@ -477,11 +479,13 @@ class ApproxWordListV7:
             score = scores[n_idx]
 
             grams = query_grams[n_idx]
-            denominator = len(grams) - 1
+            # named for what it divides -- an n-gram's index into a 0..1 position. NOT the
+            # scoring denominator: that is the `denominator` parameter, which this shadowed
+            position_divisor = len(grams) - 1
             query_locations: Dict[str, List[float]] = dict()
-            if denominator > 0:
+            if position_divisor > 0:
                 for idx, n_gram in enumerate(grams):
-                    query_locations.setdefault(n_gram, []).append(idx / denominator)
+                    query_locations.setdefault(n_gram, []).append(idx / position_divisor)
             elif grams:
                 query_locations[grams[0]] = [0.0]
 
@@ -496,19 +500,22 @@ class ApproxWordListV7:
 
                 if len(locations) == 1:
                     # 1-vs-1 emd is just abs(x - y) (positions are in [0, 1]), so the
-                    # similarity contribution 1 + 1 - emd collapses to 2 - abs(x - y).
+                    # similarity contribution 1 + 1 - emd collapses to 2 - abs(x - y), i.e.
+                    # 2 * min(c1, c2) - displacement with min(c1, c2) == 1.
                     # word indices are unique within a posting list, so `+=` on a fancy
                     # index is a well-defined scatter-add
                     if n_single:
                         single_idxs = word_idxs[:n_single]
-                        score[single_idxs] += weight * (2.0 - np.abs(other_locs_arr - locations[0]))
+                        displacement = np.abs(other_locs_arr - locations[0])
+                        score[single_idxs] += weight * (2.0 - position_weight * displacement)
 
                     # 1-vs-m emd is min(min_dist, 2) + (m - 1), so the contribution
                     # 1 + m - emd collapses to 2 - min(min_dist, 2), independent of m
                     location = locations[0]
                     for other_word_index, other_locs in multi.get(n_gram, ()):
                         min_dist = min(abs(location - y) for y in other_locs)
-                        score[other_word_index] += weight * (2.0 - (min_dist if min_dist < 2.0 else 2.0))
+                        displacement = min_dist if min_dist < 2.0 else 2.0
+                        score[other_word_index] += weight * (2.0 - position_weight * displacement)
                 else:
                     # the query n-gram repeats: same collapse with the roles swapped
                     n_locations = len(locations)
@@ -516,28 +523,40 @@ class ApproxWordListV7:
                         single_idxs = word_idxs[:n_single]
                         min_dist = np.abs(other_locs_arr[:, None] - np.asarray(locations)).min(axis=1)
                         np.minimum(min_dist, 2.0, out=min_dist)
-                        score[single_idxs] += weight * (2.0 - min_dist)
+                        score[single_idxs] += weight * (2.0 - position_weight * min_dist)
 
-                    # both sides repeat: rare enough to fall back to the general dp
+                    # both sides repeat: rare enough to fall back to the general dp.
+                    # emd splits into the unavoidable unmatched mass abs(c1 - c2) plus the
+                    # displacement of the mass that did match, and c1 + c2 - abs(c1 - c2) is
+                    # exactly 2 * min(c1, c2), so this is the same form as the branches above
                     for other_word_index, other_locs in multi.get(n_gram, ()):
-                        score[other_word_index] += weight * (n_locations + len(other_locs)
-                                                             - emd_1d_dp(locations, other_locs))
+                        other_count = len(other_locs)
+                        displacement = (emd_1d_dp(locations, other_locs)
+                                        - abs(n_locations - other_count))
+                        score[other_word_index] += weight * (2.0 * min(n_locations, other_count)
+                                                             - position_weight * displacement)
 
         if normalize:
-            scores = [scores[n_idx] / self._denominator(n_idx, query_totals[n_idx])
+            scores = [scores[n_idx] / self._denominator(n_idx, query_totals[n_idx], denominator)
                       for n_idx in range(num_n)]
         return scores, candidates
 
-    def _denominator(self, n_idx: int, query_total: float) -> np.ndarray:
+    def _denominator(self, n_idx: int, query_total: float, denominator: str = 'dice') -> np.ndarray:
         """
         total n-gram count of (query, indexed word), for normalizing a similarity to 0..1
         weighted by idf when `idf_exponent` is set, in which case both sides are weighted sums
+
+        `dice` is the additive `total_query + total_word` this index has always used. `geo` is
+        the cosine-shaped `2 * sqrt(total_query * total_word)`, which is never larger (AM-GM),
+        so it softens the penalty for a length mismatch instead of charging the full difference
 
         clamped away from zero: a word shorter than n produces no n-grams at all, so its
         numerator is zero anyway and the exact divisor is irrelevant -- we only need to
         avoid a 0/0 nan leaking into the scores
         """
         totals = self._weighted_total_by_word[n_idx] if self._weighted else self._num_grams_by_word[n_idx]
+        if denominator == 'geo':
+            return np.maximum(2.0 * np.sqrt(totals * query_total), 1.0)
         return np.maximum(totals + query_total, 1.0)
 
     def lookup(self,
@@ -546,6 +565,8 @@ class ApproxWordListV7:
                dim: Union[int, float] = 1,
                invert: bool = True,
                normalize: bool = False,
+               position_weight: float = 1.0,
+               denominator: str = 'dice',
                ) -> List[Tuple[str, float]]:
         """
         find the closest indexed words to `word`
@@ -566,6 +587,25 @@ class ApproxWordListV7:
         :param dim: exponent of the power mean used to combine per-n scores (1 == plain mean)
         :param invert: return similarity (default) instead of distance
         :param normalize: return a score between 0 and 1
+        :param position_weight: how much of the positional displacement to charge for, in
+            [0, 1]. an n-gram shared at counts (c1, c2) contributes
+            `2 * min(c1, c2) - position_weight * displacement`, where `displacement` is the
+            part of the mover's distance left after the unavoidable unmatched mass
+            `abs(c1 - c2)`. 1.0 (the default) is n-gram mover's distance exactly, bit-for-bit;
+            0.0 discards position entirely and leaves Dice over n-gram multisets, which is
+            what `experiments/position_penalty.py` measured as *better* on product names
+            (train AP 0.464 order-blind vs 0.441 for full nmd -- the displacement removes 7.2%
+            of the score on true matches but only 6.7% on non-matches, so it costs separation).
+
+            values above 1.0 are rejected rather than clamped, because they would break
+            pruning: the two-sided bound needs the contribution to stay within
+            [min(c1, c2), 2 * min(c1, c2)], and `displacement <= min(c1, c2)` only bounds
+            `position_weight * displacement` from above while the weight is at most 1
+        :param denominator: `dice` (the default) normalizes by `total_query + total_word`;
+            `geo` normalizes by `2 * sqrt(total_query * total_word)`. only has any effect when
+            `normalize=True`. docs/bow-plan.md part 6 measured geo above dice on product names
+            at every idf exponent it tried. both are per-word positive scalars, so either one
+            preserves pruning
         :return: [(word, score), ...], most similar first
         """
         if not isinstance(word, str):
@@ -578,11 +618,17 @@ class ApproxWordListV7:
             raise TypeError(top_k)
         if top_k <= 0:
             raise ValueError(top_k)
+        if isinstance(position_weight, bool) or not isinstance(position_weight, (int, float)):
+            raise TypeError(position_weight)
+        if not 0.0 <= position_weight <= 1.0:
+            raise ValueError(position_weight)  # outside [0, 1] the pruning bound stops holding
+        if denominator not in ('dice', 'geo'):
+            raise ValueError(denominator)
 
         if self._case_insensitive:
             word = word.casefold()
 
-        found = self._similarity_vectors(word, top_k, normalize, dim)
+        found = self._similarity_vectors(word, top_k, normalize, dim, position_weight, denominator)
         if found is None:
             return []
         scores, candidates = found

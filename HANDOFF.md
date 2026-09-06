@@ -222,6 +222,44 @@ The pattern held a fourth and fifth time: both wins were in code found by profil
 loops the 300k single-word profile never exercised, because single words have almost no
 repeated n-grams), and the "sound but useless" pruning bound was a cost, not a saving.
 
+**The removal helps the small single-word benchmarks too** (2026-09-06, `.scratch/ab_v7.py`,
+`HEAD~1` = `8c03195` vs `de621c2`, separate processes, min of 2, `top_k=50` as the eval uses,
+d1/dice; d2/geo tracks within 5%). Rankings differ only at boundary ties, verified with
+`.scratch/check_task_identity.py` (960 lookups per task, 0 ranking differences, worst score
+difference 0):
+
+| task | docs | n=(2,4) | n=(1,2) |
+|---|---:|---:|---:|
+| typo | 8 000 | 0.30 → 0.19 ms (1.6x) | 1.37 → 0.39 ms (3.5x) |
+| typo_hard | 30 000 | 2.2 → 0.97 ms (2.3x) | 17.0 → 2.7 ms (6.3x) |
+| abtbuy | 1 079 | 3.1 → 1.2 ms (2.6x) | 36 → 16 ms (2.3x) |
+| ermagellan | 1 035 | 97 → 41 ms (2.4x) | not run (unigrams on 138-char docs: 341 s/config) |
+
+The n=(1,2) column is the multi-posting grouping at work: unigrams repeat inside almost every
+word, so that configuration always lived on the python-loop path the 300k single-word profile
+at n=(2,4) never showed. `index_param_search.py` grids get correspondingly cheaper.
+
+### ⚠ Open: real WAND, since the cheap one did not work
+
+The count-based pruning bound was meant as a cheaper WAND -- a per-word upper bound from
+counts alone, no sorted postings, no per-term maxima. It failed for a reason that is worth
+stating precisely: **it only ever bounded, it never skipped.** WAND's saving comes from
+*not reading* postings below the current threshold; the count bound was computed by reading
+every posting once and then reading them all again to score, so its best case was a smaller
+final sort. A bound that costs a full pass cannot beat scoring in a full pass.
+
+Real WAND for this index would need, per n-gram: postings sorted by word index (already true
+by construction), a per-posting-list upper bound on contribution (`2 * min(c_query, c_max) *
+weight / min_denominator` -- cheap to precompute in `_freeze`), and the pivot walk with a
+running top-k heap. It pays off exactly where the current design hurts: at 1M phrases the
+`"e "` bigram has ~500k postings and an upper bound so low that WAND would skip nearly all of
+them once the heap fills. It does *not* pay off on the small benchmarks (the whole vocabulary
+fits in cache and the numpy pass is ~1 ms), and the pivot walk is a python loop unless written
+in a compiled extension, which the standing constraint on `nmd` staying dependency-free
+makes a V8-shaped project rather than a V7 patch. Worth trying only against the 1M-phrase
+load test in `experiments/large_vocab_bench.py`, and only with a compiled inner loop; a
+python-loop prototype will lose to the numpy pass at every size and prove nothing.
+
 ⚠ **`normalize` and `idf_exponent` substitute for each other** -- both counteract length bias,
 so applying both over-corrects. On abtbuy `normalize=True` is worth +0.145 MAP at
 `idf_exponent=0` and **-0.079** at `idf_exponent=3`. Any future default change to one has to

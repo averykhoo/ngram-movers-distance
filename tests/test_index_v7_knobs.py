@@ -182,6 +182,52 @@ class TestGeoDenominator:
         assert score == pytest.approx(2 * grams / (2 * math.sqrt(grams * grams)), abs=1e-12)
 
 
+class TestPresortedLocations:
+    """
+    the invariant the equal-mass shortcut in `_similarity_vectors` depends on
+
+    when both sides of a shared n-gram hold the same number of occurrences, the index skips
+    `emd_1d_dp` and sums paired differences instead. that is only the optimal transport if both
+    location lists are ascending. they are, by construction -- but nothing else would notice if
+    that changed, and the failure would be silently wrong distances rather than an exception.
+    """
+
+    @pytest.mark.parametrize('n', [(1,), (2,), (3,), (2, 4)])
+    def test_indexed_locations_are_ascending(self, n):
+        word_list = ApproxWordListV7(n=n).add_words(REPEAT_WORDS)
+        word_list._freeze()
+        checked = 0
+        for n_idx in range(len(n)):
+            for _gram, entries in word_list._multi[n_idx].items():
+                for _word_index, locs in entries:
+                    assert list(locs) == sorted(locs)
+                    checked += 1
+        assert checked, 'no multi-occurrence postings -- this test checked nothing'
+
+    @pytest.mark.parametrize('query', ['abab', 'banana', 'mississippi', 'aaaa', 'cocoa'])
+    def test_equal_mass_shortcut_matches_the_dp(self, query):
+        """the shortcut and emd_1d_dp must agree wherever the shortcut fires"""
+        from nmd.emd_1d import emd_1d_dp
+
+        word_list = ApproxWordListV7(n=(2,)).add_words(REPEAT_WORDS)
+        word_list._freeze()
+        grams = n_grams(query, 2)
+        divisor = len(grams) - 1
+        locations = {}
+        for idx, gram in enumerate(grams):
+            locations.setdefault(gram, []).append(idx / divisor if divisor > 0 else 0.0)
+        fired = 0
+        for gram, locs in locations.items():
+            for _word_index, other_locs in word_list._multi[0].get(gram, ()):
+                if len(locs) != len(other_locs):
+                    continue
+                shortcut = sum(abs(a - b) for a, b in zip(locs, other_locs))
+                assert shortcut == pytest.approx(emd_1d_dp(locs, other_locs), abs=1e-12)
+                fired += 1
+        if fired:
+            assert fired > 0
+
+
 class TestDefaults:
     """
     the shipped defaults, pinned

@@ -470,7 +470,13 @@ class ApproxWordListV7:
         kth_best = -np.partition(-nonzero_bounds, k - 1)[k - 1]
         candidates = touched & (bounds >= kth_best / 2)
 
-        # --- pass 2: exact emd similarity, for the surviving candidates ---------------------
+        # --- pass 2: exact emd similarity ---------------------------------------------------
+        # ⚠ this scores every posting of every query n-gram, NOT just the candidates computed
+        # above -- `candidates` only decides which scores get ranked. the bound is a top-k
+        # correctness mechanism here, not a work-saving one. restricting this loop to candidates
+        # is an unexploited optimization: measured 2026-09-06 on 30k words, only 0.9% of the
+        # vocabulary survives the bound at n=(2, 4) top_k=5 (3.5% at top_k=50), so pass 2 is
+        # currently doing ~30x more scatter-add work than the ranking needs
         scores = [np.zeros(vocab_size, dtype=np.float64) for _ in range(num_n)]
         for n_idx in range(num_n):
             words_by_gram = self._words[n_idx]
@@ -525,14 +531,28 @@ class ApproxWordListV7:
                         np.minimum(min_dist, 2.0, out=min_dist)
                         score[single_idxs] += weight * (2.0 - position_weight * min_dist)
 
-                    # both sides repeat: rare enough to fall back to the general dp.
+                    # both sides repeat: fall back to the general dp.
                     # emd splits into the unavoidable unmatched mass abs(c1 - c2) plus the
                     # displacement of the mass that did match, and c1 + c2 - abs(c1 - c2) is
                     # exactly 2 * min(c1, c2), so this is the same form as the branches above
                     for other_word_index, other_locs in multi.get(n_gram, ()):
                         other_count = len(other_locs)
-                        displacement = (emd_1d_dp(locations, other_locs)
-                                        - abs(n_locations - other_count))
+                        if other_count == n_locations:
+                            # equal masses: nothing can go unmatched, and in one dimension the
+                            # optimal transport is then the monotone (sorted) matching, so the
+                            # displacement is just the sum of paired differences. this needs both
+                            # lists ascending, which holds by construction -- `add_word` and the
+                            # query loop above both append locations in increasing index order.
+                            # `tests/test_index_v7_knobs.py::TestPresortedLocations` pins that,
+                            # because if it ever stopped holding this would silently return wrong
+                            # distances rather than fail. measured 2026-09-06 on ermagellan it
+                            # skips 46.2% of dp calls at n=(2,4) and 6.7% at n=(1,), for 1.21x
+                            # and 1.19x on the emd workload respectively -- the unigram gain is
+                            # larger than its call share because equal-mass pairs are the big ones
+                            displacement = sum(abs(a - b) for a, b in zip(locations, other_locs))
+                        else:
+                            displacement = (emd_1d_dp(locations, other_locs)
+                                            - abs(n_locations - other_count))
                         score[other_word_index] += weight * (2.0 * min(n_locations, other_count)
                                                              - position_weight * displacement)
 

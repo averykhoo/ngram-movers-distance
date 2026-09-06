@@ -58,6 +58,46 @@ matter, that fallback is the thing to vectorise.
 ⚠ **`n=(1,)` is useless on long documents** -- MAP 0.008 on ermagellan, because every
 138-character document contains every letter. Unigrams only work when documents are short.
 
+### ⚠ "emd is not the bottleneck" is a short-word result and reverses on long documents
+
+The note further down this file says emd was ~7% of a V6 lookup. Profiled 2026-09-06 on
+`ermagellan`, `emd_1d_dp` is **78%** of a lookup at `n=(2,4)` and **97%** at `n=(1,)`. It only
+looked cheap because 8-character words almost never repeat an n-gram.
+
+**None of the shipped variants beats the plain dp on that workload** (`experiments/emd_variants_bench.py`):
+
+| variant | n=(1,) | n=(2,4) |
+|---|---|---|
+| `emd_1d_dp` | 127.7 µs | 10.8 µs |
+| `emd_1d_fast` | 136.8 µs (0.93x) | 11.2 µs (0.96x) |
+| `emd_1d_hybrid` | 144.4 µs (0.88x) | 12.4 µs (0.87x) |
+
+`emd_1d_fast`'s shortcuts are for 1-vs-1 and 1-vs-many, which V7 already closed-forms inline, so
+nothing reaching `emd_1d.py` can use them. `emd_1d_hybrid` loses even at 46.2% equal-mass
+because it *sorts*, and the common shapes are (3,3) and (2,2) -- two `sorted()` calls cost more
+than a nine-cell dp. `emd_1d_old` is hybrid's preprocessing plus brute-force enumeration, so
+hybrid strictly dominates it; it stays only as `test_emd_correctness.py`'s oracle.
+
+**What did work: skip the dp when the two sides have equal counts.** With equal masses nothing
+goes unmatched, so 1-D optimal transport is the monotone matching and the displacement is the
+sum of paired differences -- and no sort is needed, because the index already builds both
+location lists in ascending order (verified: 0 of 40 000 workload pairs were unsorted, which is
+precisely what `emd_1d_hybrid` was paying for). Exact to 2.2e-16, bit-for-bit identical output,
+1.19-1.21x on the emd workload. `TestPresortedLocations` pins the sortedness invariant, since
+breaking it would produce silently wrong distances rather than an exception.
+
+**Still open: batching.** For a given query n-gram the query-side location list is fixed and only
+the document side varies, so grouping multi-postings by `len(other_locs)` would let one numpy dp
+serve a whole bucket -- `m*n` array ops instead of `m*n*B` python ones. That is the remaining
+order-of-magnitude lever; the equal-mass shortcut is only worth ~1.2x.
+
+⚠ **Pruning cannot help here.** `_similarity_vectors` computes `candidates` but pass 2 scores
+every posting regardless -- the bound is a top-k correctness mechanism, not a work-saving one.
+Restricting pass 2 to candidates is a real unexploited optimization on *short* corpora (0.9% of
+30k words survive at `n=(2,4)` top_k=5) and worth nothing on long ones (90-100% survive on
+ermagellan, because long documents share n-grams with everything). The two levers are inversely
+correlated: pruning is selective exactly where the dp is rarely called.
+
 ## Environment
 
 Conda env named after the repo folder:

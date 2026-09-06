@@ -479,8 +479,15 @@ def load_shortlist(limit: int) -> List[tuple]:
     return chosen
 
 
-def run_unified(task: str, documents: List[str], queries, configs: List[tuple] = None) -> List[dict]:
+def run_unified(task: str, documents: List[str], queries, configs: List[tuple] = None,
+                exclude_n: Sequence[int] = ()) -> List[dict]:
     configs = configs if configs is not None else unified_configs()
+    if exclude_n:
+        # for ermagellan: unigram rows there cost 341s each to score MAP 0.008, because every
+        # 138-character document contains every letter. dropping them leaves 270 of 432 configs
+        # affordable, which is a far better cross-task intersection than a 19-row shortlist
+        excluded = set(exclude_n)
+        configs = [c for c in configs if not (set(c[0]) & excluded)]
     by_build: Dict[tuple, List[tuple]] = defaultdict(list)
     for n, idf, dim, normalize, position_weight, denom in configs:
         by_build[(n, idf)].append((dim, normalize, position_weight, denom))
@@ -779,7 +786,8 @@ def load_task(task: str):
 
 
 def main(which: str = 'both', quick: bool = False, stage2: bool = False,
-         unified: bool = False, do_aggregate: bool = False, shortlist: int = 0) -> None:
+         unified: bool = False, do_aggregate: bool = False, shortlist: int = 0,
+         exclude_n: Sequence[int] = ()) -> None:
     if which in ('both', 'all'):
         tasks = ALL_TASKS if which == 'all' else ['typo', 'abtbuy']
     else:
@@ -796,7 +804,7 @@ def main(which: str = 'both', quick: bool = False, stage2: bool = False,
         documents, queries = loaded
         if unified:
             configs = load_shortlist(shortlist) if shortlist else None
-            rows = run_unified(task, documents, queries, configs)
+            rows = run_unified(task, documents, queries, configs, exclude_n)
             summarize(task, rows)
             print(f'\nwrote {write_results(task, rows, suffix="_unified")}')
             continue
@@ -825,9 +833,12 @@ def main(which: str = 'both', quick: bool = False, stage2: bool = False,
 if __name__ == '__main__':
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     shortlist_n = 0
+    excluded_n = ()
     for arg in sys.argv[1:]:
         if arg.startswith('--shortlist='):
             shortlist_n = int(arg.split('=', 1)[1])
+        if arg.startswith('--exclude-n='):
+            excluded_n = tuple(int(x) for x in arg.split('=', 1)[1].split(','))
     main(args[0] if args else 'both', quick='--quick' in sys.argv, stage2='--stage2' in sys.argv,
          unified='--unified' in sys.argv, do_aggregate='--aggregate' in sys.argv,
-         shortlist=shortlist_n)
+         shortlist=shortlist_n, exclude_n=excluded_n)

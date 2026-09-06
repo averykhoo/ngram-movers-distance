@@ -770,3 +770,129 @@ C `nmd n=(1,2)` 0.938 hit@1.
   token boundaries with a small `L` is what keeps this tractable.
 - "Extended edit distance" (previously evaluated; the reference implementation
   was found buggy) — not used here.
+
+## Part 9 — the index's own parameters, across six retrieval benchmarks
+
+Parts 5-8 compared *scoring formulas*, pairwise, over every candidate. None of
+them touched an index: `baseline_eval`, `word_lookup_eval`, `segment_eval`,
+`benchmark_all` and `hyperparam_search` all call `metric(a, b)` per candidate, so
+`ApproxWordListV7`'s own parameters had never been measured. Part 9 is that
+search. Code: `experiments/index_param_search.py`; results as tracked CSVs in
+`experiments/results/`.
+
+### What was missing before this
+
+- **MAP and NDCG did not exist anywhere in the tree.** Every eval script inlined
+  its own `rank = next(...)` loop taking only the *first* relevant item's rank,
+  which silently collapses multi-answer ground truth. They now live in
+  `experiments/ranking_metrics.py` alongside `precision_at_k` and `r_precision`.
+- **Two of the largest effects measured in Parts 6-7 were unreachable from the
+  library.** Every winning row in Parts 6 and 8 uses *geometric* normalization,
+  but V7 hardcoded the additive Dice denominator; and nothing in `nmd/` could
+  down-weight the position term that `position_penalty.py` found harmful. Both
+  are now `lookup` parameters (`denominator`, `position_weight`), defaulting to
+  the previous behaviour bit-for-bit.
+
+### The benchmarks
+
+| task | corpus | queries | regime |
+|---|---|---|---|
+| `typo` | 8 000 words, words_en | 241 | 1-2 edits |
+| `typo_ms` | 8 000 words, words_ms | 237 | the only non-English task |
+| `typo_hard` | 30 000 words, british-english-insane | 248 | 2-3 edits, denser dictionary |
+| `typo_brutal` | 30 000 of 518k merged words | 250 | 2-5 edits, worst-ranked only |
+| `abtbuy` | 1 079 Buy product names | 100 | short product names |
+| `ermagellan` | 1 035 entities, name + description | 206 | long documents (~138 chars) |
+
+`typo_brutal` ranks corruptions by **Damerau**-Levenshtein (not plain
+Levenshtein: `corrupt` draws uniformly from insert/delete/substitute/*transpose*,
+and plain Levenshtein charges a transposition 2 where Damerau charges 1, which
+would have packed the benchmark with transposition-heavy cases) normalized by
+answer length, and requires answers of 6+ characters. ⚠ that length floor
+is not cosmetic — normalizing by length *inverts* the length bias rather than
+removing it, and the unfiltered top of the pool was `('iv', 'daily')`,
+`('ot', 'eten')`, `('xtc', 'nati')`: unrecoverable, not hard. Note also that the
+edit budget is an upper bound, not the achieved distance, since operations
+overlap and cancel — the realized distance has to be measured, which is the other
+reason to rank rather than just raise the budget.
+
+### The result: two clusters that disagree on every knob
+
+| task | best MAP | `n` | idf | dim | normalize | pos_w | den |
+|---|---|---|---|---|---|---|---|
+| `typo` | 0.9646 | (1, 2) | 0.5 | 2 | True | 1.0 | dice |
+| `typo_ms` | 0.9554 | (1, 2) | 0.0 | 2 | True | 1.0 | dice |
+| `typo_hard` | 0.8562 | (1, 2) | 0.5 | 2 | True | 1.0 | dice |
+| `typo_brutal` | 0.4129 | (1, 2) | 0.0 | 2 | True | 1.0 | dice |
+| `abtbuy` | 0.9500 | (2, 3) | **3.0** | 1 | **False** | **0.0** | dice |
+| `ermagellan` | 0.7989 | (2, 3) | **3.0** | 1 | **False** | **0.0** | dice |
+
+Two independent tasks per cluster, agreeing internally and opposing across, so
+this is a regime split rather than one dataset's noise. It also reproduces Part 7
+at a larger scale: Part 7 found the dictionary task reversing Part 6's product
+findings, and here four typo tasks reverse two product tasks.
+
+**Best single compromise:** `n=(1,2) idf_exponent=0.5 dim=2 normalize=True
+position_weight=1.0 denominator='geo'` — top of the six-task ranking (mean
+normalized MAP 0.839) and best mean rank of the five-task one (51.2 of 432).
+`geo` is what makes it a compromise: softening the length mismatch buys +0.022 MAP
+on abtbuy for -0.004 on typo. ⚠ its worst rank is **234 of 432**, on
+abtbuy, where it scores 0.834 against 0.950 achievable. There is no configuration
+that is good everywhere.
+
+**The old default is not a compromise, it is unchosen.** `n=(2,4) idf=0 dim=1
+normalize=False` ranks 334 / 161 / 99 / 94 / 98 of 432 on the five full-grid
+tasks, and 14 of 19 on ermagellan (MAP 0.3018 against 0.7989).
+
+### Per-knob findings
+
+- **`normalize` is the largest single knob, and it defaulted to off.** At the
+  default `idf_exponent=0.0`, turning it on gains +0.3390 MAP on ermagellan
+  (0.3018 -> 0.6408), +0.1954 on abtbuy (24/24 paired cells), +0.0733 on typo
+  (24/24), +0.0696 on typo_brutal (22/24), +0.0580 on typo_hard (21/24) and
+  +0.0502 on typo_ms (17/24). **V7's default is now `True`** — deliberately
+  diverging from V6 and `ngram_movers_distance`, pinned by
+  `tests/test_index_v7_knobs.py::TestDefaults`.
+- ⚠ **`normalize` and `idf_exponent` substitute for each other.** Both
+  counteract length bias, so applying both over-corrects. On abtbuy
+  `normalize=True` is worth **+0.145** MAP at `idf_exponent=0` and **-0.079** at
+  `idf_exponent=3`. Any future default change to one must re-check the other.
+- **`position_weight` splits exactly as `position_penalty.py` predicted.** On
+  abtbuy `position_weight=0.0` scores 0.9550 against 0.9462 at 1.0, and 0.0
+  appears in both product tasks' winners. On typo it loses monotonically —
+  0.75 -> -0.002, 0.5 -> -0.006, 0.25 -> -0.008, 0.0 -> -0.021, helping **0 of 22**
+  paired comparisons. Position is the whole signal for a transposed character and
+  noise for a reordered product title.
+- **`idf_exponent` disagrees by an order of magnitude between clusters**: 0-0.5 on
+  typo (collapsing above 1.0 — 2.0 -> 0.900, 3.0 -> 0.847), 3.0 on products, still
+  near the grid edge there. Part 7's reversal of Part 6 holds.
+- **`n=(1,2)` wins all four typo tasks**, confirming Part 7 through real candidate
+  generation and MAP rather than pairwise rescoring alone.
+- **`dim` and `denominator` are minor.** `dim=2` beats `dim=1` on the typo tasks by
+  ~0.002-0.007 MAP; `geo` is worth ~-0.003 on typo and ~+0.02 on products.
+
+### Caveats
+
+- ⚠ **`ermagellan` was measured on a 19-configuration shortlist**, not the
+  full 432-point grid: one `n=(1,)` configuration there costs **341 s** and scores
+  MAP **0.008**, because every 138-character document contains every letter. The
+  six-task aggregate therefore ranks 19 configurations and the five-task one ranks
+  432. Do not quote a "rank N/19" as though it came from the full grid.
+- ⚠ **`n` is doing two jobs** — selecting candidates *and* scoring them — so
+  a grid over a single `n` conflates "good index key" with "good scorer". That is
+  exactly what Part 7's unimplemented prune-then-rescore design would separate, and
+  it means any recommended `n` here is a compromise between the two roles.
+- ⚠ **V7's "~98% of postings are single-occurrence" is short-word-specific.**
+  Measured 2026-09-06: 99.5% on typo (8 chars), 92.3% on abtbuy (53 chars), **78.8%
+  on ermagellan (138 chars)**. On long documents 21% of postings fall to the python
+  dp fallback, which is where that 67 s per configuration goes. If long documents
+  matter, that fallback is the thing to vectorise.
+- The four typo tasks have exactly one right answer, so MAP there is numerically
+  identical to MRR. abtbuy and ermagellan are set-valued but close to 1:1, so MAP
+  and MRR track closely everywhere in this part; NDCG@10 is what adds information
+  over hit@1.
+- `top_k=50` throughout, so every metric is a cutoff metric at that depth. Changing
+  it makes runs incomparable.
+- The easy typo tasks are near saturation and rank poorly as discriminators: their
+  top ten configurations span 0.9646-0.9566 (0.8% relative), against 0.4129-0.3579
+  (13%) on `typo_brutal`. Prefer `typo_brutal` when comparing close candidates.

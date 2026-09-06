@@ -124,8 +124,37 @@ weighted = ApproxWordListV7((2, 4), idf_exponent=2.0)
 
 # lookup returns [(word, score), ...], most similar first
 print(word_list.lookup(f'asalamalaikum'))
-print(word_list.lookup(f'walaikumalasam', top_k=3, normalize=True))
+print(word_list.lookup(f'walaikumalasam', top_k=3))
+
+# two more scoring knobs, both defaulting to the plain nmd behaviour:
+#   position_weight  how much of the positional displacement to charge for, in [0, 1].
+#                    1.0 (default) is nmd exactly; 0.0 discards position and leaves dice
+#                    over n-gram multisets, which is BETTER on product names and worse on
+#                    typos (docs/bow-plan.md part 9)
+#   denominator      'dice' (default) normalizes by total_query + total_word;
+#                    'geo' by 2 * sqrt(total_query * total_word), which softens a length
+#                    mismatch instead of charging the full difference
+print(word_list.lookup(f'sony camera dsc123', position_weight=0.0, denominator='geo'))
 ```
+
+### which parameters to use
+
+`docs/bow-plan.md` part 9 searched a 432-point grid over six retrieval benchmarks. The tasks
+split into two clusters that disagree on **every** knob, so there is no single best setting:
+
+| your data looks like | `n` | `idf_exponent` | `dim` | `normalize` | `position_weight` |
+|---|---|---|---|---|---|
+| short strings, typos | `(1, 2)` | 0.0-0.5 | 2 | `True` | 1.0 |
+| product names, records | `(2, 3)` | 3.0 | 1 | `False` | 0.0 |
+| unknown / mixed | `(1, 2)` | 0.5 | 2 | `True` | 1.0, with `denominator='geo'` |
+
+⚠ `normalize` and `idf_exponent` substitute for each other -- both counteract length bias, so
+turning both up over-corrects. On product names `normalize=True` is worth **+0.145** MAP at
+`idf_exponent=0` and **-0.079** at `idf_exponent=3`.
+
+⚠ `n=(1, 2)` scores best on every typo benchmark but is a poor *index key*: unigrams have no
+selectivity, and on 138-character documents `n=(1,)` scores MAP 0.008. Use it for short strings
+only.
 
 * differences from `WordList` (`ApproxWordListV6`):
     * `lookup()` returns a plain float score per word instead of a tuple of
@@ -139,6 +168,11 @@ print(word_list.lookup(f'walaikumalasam', top_k=3, normalize=True))
       work here
     * `invert=False` returns an actual distance (`ApproxWordListV5` returned
       `normalize - score`, i.e. a negative number)
+    * ⚠ **`normalize` defaults to `True` here**, where `WordList` and
+      `ngram_movers_distance()` both default to `False`. An un-normalized score is a raw
+      similarity sum, so it grows with candidate length and biases ranking toward long
+      entries; turning it on gained MAP on all six benchmarks in `docs/bow-plan.md` part 9,
+      from +0.050 on Malay typo correction to +0.339 on long documents
 
 ## `bow_ngram_movers_distance()`
 

@@ -1,6 +1,6 @@
 # Tests for N-gram Mover's Distance
 
-Counts below were measured 2026-09-05 (`992 passed, 1 xfailed`). They will drift — re-run
+Counts below were measured 2026-09-06 (`1052 passed, 1 xfailed`). They will drift — re-run
 `pytest --collect-only -q` rather than trusting them.
 
 ## Running
@@ -33,6 +33,7 @@ it is missing — it is the only test file that needs a corpus.
 | `test_index_v6.py` | 79 | `ApproxWordListV6`, i.e. the shipped `WordList` — the two bugs fixed 2026-09-05, and guards that the frozen V3/V5 behaviour and the `n=(2, 4)` default did **not** move |
 | `test_index_v7.py` | 124 | `ApproxWordListV7`: container protocol, and that pruning never drops a true top-k |
 | `test_index_v7_idf.py` | 139 | V7's `idf_exponent` path, including `test_exponent_zero_matches_no_exponent_exactly` |
+| `test_index_v7_knobs.py` | 60 | V7's `position_weight` and `denominator`, and that both are inert at their defaults; `TestDefaults` pins `normalize=True` |
 | `test_word_set.py` | 42 | `WordSet` outside idf: `min_similarity`, defaults, set protocol, unicode, edge cases |
 | `test_word_set_idf.py` | 21 | `WordSet`'s incrementally-maintained idf, against a brute-force document frequency |
 | `test_bow.py` | 59 | `bow_ngram_movers_distance`, plus `emd_1d_fast ≡ emd_1d_dp` (`TestEmd1dFast`) |

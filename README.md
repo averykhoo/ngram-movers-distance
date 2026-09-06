@@ -142,11 +142,20 @@ print(word_list.lookup(f'sony camera dsc123', position_weight=0.0, denominator='
 `docs/bow-plan.md` part 9 searched a 432-point grid over six retrieval benchmarks. The tasks
 split into two clusters that disagree on **every** knob, so there is no single best setting:
 
-| your data looks like | `n` | `idf_exponent` | `dim` | `normalize` | `position_weight` |
-|---|---|---|---|---|---|
-| short strings, typos | `(1, 2)` | 0.0-0.5 | 2 | `True` | 1.0 |
-| product names, records | `(2, 3)` | 3.0 | 1 | `False` | 0.0 |
-| unknown / mixed | `(1, 2)` | 0.5 | 2 | `True` | 1.0, with `denominator='geo'` |
+| your data looks like | `n` | `idf_exponent` | `dim` | `normalize` | `position_weight` | `denominator` |
+|---|---|---|---|---|---|---|
+| short strings, typos | `(1, 2)` | 0.0-0.5 | 2 | `True` | 1.0 | either |
+| product names, records | `(2, 4)` | 3.0 | 1 | `True` | 1.0 | `'geo'` |
+| long text (100+ chars) | `(2, 4)` | 3.0 | 1 | `True` | 1.0 | `'geo'` |
+| unknown / mixed | `(2, 4)` | 1.0 | 2 | `True` | 1.0 | `'geo'` |
+
+Every row wants `normalize=True` and `position_weight=1.0`; the clusters differ only on `n`,
+`idf_exponent` and `dim`.
+
+⚠ `denominator='geo'` is worth **+0.099 MAP** on long documents (helping 90 of 90 paired
+comparisons) and +0.016 on product names, while being roughly neutral on typo correction. It
+softens the penalty for a length mismatch instead of charging the full difference, so it helps
+most where candidate lengths vary and costs little where they do not.
 
 ⚠ `normalize` and `idf_exponent` substitute for each other -- both counteract length bias, so
 turning both up over-corrects. On product names `normalize=True` is worth **+0.145** MAP at

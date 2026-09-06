@@ -824,17 +824,31 @@ reason to rank rather than just raise the budget.
 | `typo_ms` | 0.9554 | (1, 2) | 0.0 | 2 | True | 1.0 | dice |
 | `typo_hard` | 0.8562 | (1, 2) | 0.5 | 2 | True | 1.0 | dice |
 | `typo_brutal` | 0.4129 | (1, 2) | 0.0 | 2 | True | 1.0 | dice |
-| `abtbuy` | 0.9500 | (2, 3) | **3.0** | 1 | **False** | **0.0** | dice |
-| `ermagellan` | 0.7989 | (2, 3) | **3.0** | 1 | **False** | **0.0** | dice |
+| `abtbuy` | 0.9500 | (2, 3) | **3.0** | 1 | False | 0.0 | dice |
+| `ermagellan` | 0.9039 | (2, 4) | **3.0** | 1 | True | 1.0 | **geo** |
 
-Two independent tasks per cluster, agreeing internally and opposing across, so
-this is a regime split rather than one dataset's noise. It also reproduces Part 7
-at a larger scale: Part 7 found the dictionary task reversing Part 6's product
-findings, and here four typo tasks reverse two product tasks.
+⚠ **Corrected 2026-09-06.** The `ermagellan` row first read 0.7989 with `normalize=False`,
+`position_weight=0.0`, `dice` -- measured on a 19-configuration shortlist that did not contain
+the winning combinations. Re-run over the full 270-point grid its best is `normalize=True`,
+`position_weight=1.0`, `geo` at **0.9039**; the shortlist configuration re-measures at 0.79894
+there, so the runs agree and the shortlist was simply too narrow to rank on. **Do not draw
+parameter conclusions from a shortlist drawn from other tasks' rankings.**
 
-**Best single compromise:** `n=(1,2) idf_exponent=0.5 dim=2 normalize=True
-position_weight=1.0 denominator='geo'` — top of the six-task ranking (mean
-normalized MAP 0.839) and best mean rank of the five-task one (51.2 of 432).
+The clusters differ by `n`, `idf_exponent` and `dim` -- not by every knob. With the full grid in,
+**all six tasks want `normalize=True` and `position_weight=1.0`**, and the two product tasks
+agree far better than the shortlist implied: `ermagellan`'s winner scores 0.9088 on abtbuy
+(against abtbuy's own best of 0.9500), while abtbuy's winner manages only 0.7989 on ermagellan.
+So `n=(2,3)/(2,4) idf=3.0 dim=1 normalize=True position_weight=1.0 denominator='geo'` is a better
+*product* setting than either task's individual optimum.
+
+It still reproduces Part 7 at a larger scale: Part 7 found the dictionary task reversing Part 6's
+product findings, and here four typo tasks reverse two product tasks on `n` and `idf_exponent`.
+
+**Best single compromise:** on the five-task full grid, `n=(1,2) idf_exponent=0.5 dim=2
+normalize=True position_weight=1.0 denominator='geo'` (best mean rank, 51.2 of 432). Restricted
+to the unigram-free field all six benchmarks share, it is `n=(2,4) idf_exponent=1.0 dim=2
+normalize=True position_weight=1.0 denominator='geo'` (mean normalized MAP 0.881, mean rank 74.8,
+worst rank 151 of 270).
 `geo` is what makes it a compromise: softening the length mismatch buys +0.022 MAP
 on abtbuy for -0.004 on typo. ⚠ its worst rank is **234 of 432**, on
 abtbuy, where it scores 0.834 against 0.950 achievable. There is no configuration
@@ -868,16 +882,24 @@ tasks, and 14 of 19 on ermagellan (MAP 0.3018 against 0.7989).
   near the grid edge there. Part 7's reversal of Part 6 holds.
 - **`n=(1,2)` wins all four typo tasks**, confirming Part 7 through real candidate
   generation and MAP rather than pairwise rescoring alone.
-- **`dim` and `denominator` are minor.** `dim=2` beats `dim=1` on the typo tasks by
-  ~0.002-0.007 MAP; `geo` is worth ~-0.003 on typo and ~+0.02 on products.
+- ⚠ **`denominator='geo'` is NOT minor** -- an earlier draft of this part said so, from a grid
+  where `ermagellan` had only a shortlist. Paired against `dice` at `normalize=True` it is worth
+  **+0.0991 MAP on ermagellan, helping 90 of 90 comparisons**, and +0.0159 on abtbuy (139/144),
+  while being ~neutral on the typo tasks (+0.0043, +0.0060, +0.0010, -0.0033). It helps most
+  where length mismatch is largest and costs nothing elsewhere, which makes it a good default
+  rather than a tuning knob; 8 of the overall top 10 use it.
+- **`dim` is minor**: `dim=2` beats `dim=1` on the typo tasks by ~0.002-0.007 MAP.
 
 ### Caveats
 
-- ⚠ **`ermagellan` was measured on a 19-configuration shortlist**, not the
-  full 432-point grid: one `n=(1,)` configuration there costs **341 s** and scores
-  MAP **0.008**, because every 138-character document contains every letter. The
-  six-task aggregate therefore ranks 19 configurations and the five-task one ranks
-  432. Do not quote a "rank N/19" as though it came from the full grid.
+- ⚠ **`ermagellan` is measured on 270 of the 432 grid points**, not all of them: the 162
+  configurations containing `n=1` cost **341 s each** there and score MAP **0.008**, because
+  every 138-character document contains every letter, so they were excluded rather than spend
+  ~15 hours measuring noise. The six-task aggregate therefore ranks those 270 unigram-free
+  configurations, and its per-task "best" values are **lower than the five-task numbers above**
+  wherever the true optimum used unigrams -- `typo` peaks at 0.9058 in that restricted field
+  against 0.9646 with `n=(1,2)` available. They are different fields; do not mix rows between
+  them.
 - ⚠ **`n` is doing two jobs** — selecting candidates *and* scoring them — so
   a grid over a single `n` conflates "good index key" with "good scorer". That is
   exactly what Part 7's unimplemented prune-then-rescore design would separate, and

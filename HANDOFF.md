@@ -25,10 +25,31 @@ Results are tracked CSVs under `experiments/results/`.
 
 **The headline result: the tasks split into two clusters that disagree on every knob.**
 
-| cluster | tasks | `n` | idf | dim | normalize | position_weight |
-|---|---|---|---|---|---|---|
-| short strings | typo, typo_ms, typo_hard, typo_brutal | (1, 2) | 0-0.5 | 2 | True | 1.0 |
-| product matching | abtbuy, ermagellan | (2, 3) | 3.0 | 1 | False | 0.0 |
+| cluster | tasks | `n` | idf | dim | normalize | position_weight | denominator |
+|---|---|---|---|---|---|---|---|
+| short strings | typo, typo_ms, typo_hard, typo_brutal | (1, 2) | 0-0.5 | 2 | True | 1.0 | either |
+| product matching | abtbuy, ermagellan | (2, 3) / (2, 4) | 3.0 | 1 | True | 1.0 | **geo** |
+
+⚠ **Corrected 2026-09-06, after ermagellan's full grid finished.** The product row previously
+read `normalize=False`, `position_weight=0.0`, `dice`, and this section previously claimed the
+clusters "disagree on every knob". Both came from ermagellan's **19-configuration shortlist**,
+which did not contain the winning combinations. On the full 270-point grid ermagellan's best is
+`n=(2,4) idf=3.0 dim=1 normalize=True position_weight=1.0 geo` at MAP **0.9039**, against 0.7989
+for the shortlist's answer (which re-measures at 0.79894 there, so the runs agree).
+
+What actually holds: **all six tasks want `normalize=True` and `position_weight=1.0`.** The
+clusters differ only on `n`, `idf_exponent` and `dim`. The two product tasks also agree with each
+other much better than reported -- ermagellan's winner scores 0.9088 on abtbuy against abtbuy's
+own best of 0.9500, while abtbuy's winner scores only 0.7989 on ermagellan.
+
+⚠ **`geo` is not a minor knob.** Paired against `dice` at `normalize=True`: **+0.0991 MAP on
+ermagellan, 90/90 comparisons**, +0.0159 on abtbuy (139/144), ~neutral on the four typo tasks
+(+0.0043, +0.0060, +0.0010, -0.0033). Helps most where length mismatch is largest, costs nothing
+elsewhere.
+
+**Lesson worth keeping: do not draw parameter conclusions from a shortlist selected by other
+tasks' rankings.** The shortlist was built from the 4-task aggregate plus per-task winners, so it
+inherited their preferences and never sampled the region ermagellan actually wanted.
 
 Best single compromise is `n=(1,2) idf=0.5 dim=2 normalize=True position_weight=1.0
 denominator='geo'` -- top of the six-task ranking, best mean rank (51.2/432) of the five-task

@@ -86,10 +86,46 @@ precisely what `emd_1d_hybrid` was paying for). Exact to 2.2e-16, bit-for-bit id
 1.19-1.21x on the emd workload. `TestPresortedLocations` pins the sortedness invariant, since
 breaking it would produce silently wrong distances rather than an exception.
 
-**Still open: batching.** For a given query n-gram the query-side location list is fixed and only
-the document side varies, so grouping multi-postings by `len(other_locs)` would let one numpy dp
-serve a whole bucket -- `m*n` array ops instead of `m*n*B` python ones. That is the remaining
-order-of-magnitude lever; the equal-mass shortcut is only worth ~1.2x.
+**Landed: batching (`_emd_1d_batch`).** Multi-postings are grouped by occurrence count so each
+group shares a dp shape and one numpy dp serves the whole group -- `m*n` array ops instead of
+`m*n*rows` python ones. Bit-identical on all 40 000 workload pairs. **1.73-1.90x** end to end on
+ermagellan at `n=(2,4)`, `(2,3)` and `(1,)`, and a no-op elsewhere.
+
+⚠ It needs the `_EMD_BATCH_MIN_ROWS = 32` gate. Batching *unconditionally* is a wash at
+`n=(2,4)` and a **loss** at `n=(1,)` -- 1947 ms/query against 1625 for never batching. Within a
+single query n-gram the postings fragment by occurrence count into groups far smaller than the
+workload-wide mean suggests; sizing this from pooled group sizes was wrong. The tuning table is
+in the source next to the constant.
+
+### ⚠ Banded dp: built, benchmarked, rejected 2026-09-06 -- do not re-derive
+
+The dp only needs the band `i <= j <= i + (len_y - len_x)` when every point of the shorter side
+gets matched, which holds whenever the combined spread is at most 2 (below that, matching always
+beats dropping both). That is always true for the index's [0, 1] positions. It saves exactly
+`len_x * (len_x - 1)` operations, ~1.83x fewer dp cells on ermagellan.
+
+It was implemented, verified bit-identical on 40 000 real pairs plus random stress on both sides
+of the spread threshold, and **still not worth keeping**:
+
+| task | n | ratio | banding fires |
+|---|---|---|---|
+| ermagellan | (1,) | 1.17-1.38x | 69.5% |
+| ermagellan | (2, 4) | 1.07x | 21.7% |
+| ermagellan | (2, 3) | 0.97x | 20.1% |
+| typo_hard | (1, 2) | 1.01x | **0%** |
+| typo | (1, 2) | 1.05x | **0%** |
+| abtbuy | (2, 4) | 1.05x | **0%** |
+
+The spread check costs a few reductions regardless of dp size, so it has to be gated on
+`len_x * (len_x - 1) >= ~12`. Ungated it **cost** 0.77x on typo `n=(1,2)`, where dp shapes are
+around (2, 3) and six operations saved cannot pay for the check. But that same gate excludes
+every short-string workload outright -- 0% firing -- so the ±5% there is noise on an unchanged
+path. The only real win is `n=(1,)` on long documents, which scores **MAP 0.008** and is a
+configuration the parameter search ruled out. No threshold rescues it: lowering the gate to fire
+on `(2,3)`/`(2,4)` reintroduces the typo regression.
+
+Cost would have been ~45 lines of a second kernel, two tuning constants, and a domain
+restriction (valid only for spread <= 2) that a later edit could silently break.
 
 ⚠ **Pruning cannot help here.** `_similarity_vectors` computes `candidates` but pass 2 scores
 every posting regardless -- the bound is a top-k correctness mechanism, not a work-saving one.

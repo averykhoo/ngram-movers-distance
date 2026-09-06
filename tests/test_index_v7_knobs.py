@@ -349,12 +349,12 @@ class TestValidation:
             index.lookup('banana', denominator=bad)
 
 
-class TestPruningStillExact:
+class TestTopKStillExact:
     """
-    the two-sided count bound is what lets lookup prune; both knobs have to preserve it
-
-    position_weight <= 1 keeps the contribution inside [min(c1,c2), 2*min(c1,c2)], and any
-    positive per-word denominator scales the bound and the score by the same factor
+    a small top_k must be a prefix of the full ranking under both knobs: the top-k selection
+    happens on the combined score, after the knobs have been applied, and ties at the
+    boundary are broken alphabetically either way. `position_weight=0.0` is the case that
+    produces boundary ties, since it collapses many scores onto the same value
     """
 
     @pytest.mark.parametrize('position_weight', [0.0, 0.5, 1.0])
@@ -364,12 +364,12 @@ class TestPruningStillExact:
         word_list = ApproxWordListV7(n=(2, 4)).add_words(words)
         for query in ('abab', 'banana', 'mississippi', 'hello', 'cocoa'):
             top_k = 3
-            pruned = word_list.lookup(query, top_k=top_k, normalize=True,
-                                      position_weight=position_weight, denominator=denominator)
-            # an exhaustive scan is just the same lookup with no room to prune
+            partial = word_list.lookup(query, top_k=top_k, normalize=True,
+                                       position_weight=position_weight, denominator=denominator)
+            # an exhaustive scan is just the same lookup with room for every word
             exhaustive = word_list.lookup(query, top_k=len(words), normalize=True,
                                           position_weight=position_weight,
                                           denominator=denominator)[:top_k]
-            assert [w for w, _ in pruned] == [w for w, _ in exhaustive]
-            for (_, a), (_, b) in zip(pruned, exhaustive):
+            assert [w for w, _ in partial] == [w for w, _ in exhaustive]
+            for (_, a), (_, b) in zip(partial, exhaustive):
                 assert a == pytest.approx(b, abs=1e-12)

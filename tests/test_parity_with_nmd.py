@@ -305,7 +305,7 @@ class TestV7MatchesNmd:
 
     @pytest.mark.parametrize('query', QUERIES)
     def test_lookup_returns_the_exhaustive_top_k(self, query, v7, exhaustive_top_k):
-        """V7 has no lossy prefilter at all, so its pruning must never cost a true top-k word"""
+        """V7 scores every posting and has no prefilter, so it must never lose a true top-k word"""
         per_n, _ = exhaustive_top_k
         got = [score for _, score in v7.lookup(query, top_k=TOP_K, normalize=True)]
         assert got == pytest.approx([score for score, _ in per_n[query]], abs=TOLERANCE)

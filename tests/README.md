@@ -31,7 +31,7 @@ it is missing — it is the only test file that needs a corpus.
 | `test_nmd_core.py` | 15 | `ngram_movers_distance` — the metric itself, `invert` / `normalize`, `n=1` |
 | `test_emd_correctness.py` | 4 | the 1-D EMD kernels against each other: symmetry, edge cases, `emd_1d_old` as an oracle |
 | `test_index_v6.py` | 79 | `ApproxWordListV6`, i.e. the shipped `WordList` — the two bugs fixed 2026-09-05, and guards that the frozen V3/V5 behaviour and the `n=(2, 4)` default did **not** move |
-| `test_index_v7.py` | 124 | `ApproxWordListV7`: container protocol, and that pruning never drops a true top-k |
+| `test_index_v7.py` | 125 | `ApproxWordListV7`: container protocol, that the top-k equals an exhaustive scan, and alphabetical order across boundary ties |
 | `test_index_v7_idf.py` | 139 | V7's `idf_exponent` path, including `test_exponent_zero_matches_no_exponent_exactly` |
 | `test_index_v7_knobs.py` | 60 | V7's `position_weight` and `denominator`, and that both are inert at their defaults; `TestDefaults` pins `normalize=True` |
 | `test_word_set.py` | 42 | `WordSet` outside idf: `min_similarity`, defaults, set protocol, unicode, edge cases |

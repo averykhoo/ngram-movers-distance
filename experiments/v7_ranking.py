@@ -5,9 +5,9 @@ every other eval script in this directory ranks by calling `metric(query, candid
 candidate. that measures the scoring formula but pays no attention to the index, and it is slow:
 word_lookup_eval spends ~12 minutes and benchmark_all ~21 minutes largely on that loop.
 
-the substitution is exact rather than approximate. V7's pruning bound is two-sided, so
-`lookup` returns the same scores an exhaustive scan would (see the module docstring of
-nmd/nmd_index_v7.py and tests/test_index_v7.py::test_pruning_never_drops_a_true_top_k), and
+the substitution is exact rather than approximate. V7 scores every posting, so `lookup`
+returns the same scores an exhaustive scan would (see the module docstring of
+nmd/nmd_index_v7.py and tests/test_index_v7.py::TestScoring::test_top_k_matches_an_exhaustive_scan), and
 `lookup(dim=1, normalize=True, invert=True)` computes the mean over n of the per-n normalized
 similarity -- which is exactly what `sum(ngram_movers_distance(a, b, n=n, invert=True,
 normalize=True) for n in n_list) / len(n_list)` computes pairwise.

@@ -1,11 +1,11 @@
 """
 idf weighting in ApproxWordListV7
 
-the property that matters most is that weighting does not break the pruning. V7's whole claim
-is that `lookup` returns the scores an exhaustive scan would, because the count bound brackets
-the true score two-sidedly. weighting each n-gram scales both ends of that bracket by the same
-non-negative constant, so the bound should survive -- these tests check that it actually does,
-against a brute-force scorer written independently of the index internals.
+the property that matters most is that weighting changes the aggregation and nothing else.
+V7's whole claim is that `lookup` returns the scores an exhaustive scan would; weighting
+each n-gram scales that n-gram's whole contribution by one non-negative constant, so the
+weighted score should still be what a brute-force scorer written independently of the index
+internals computes -- these tests check that it actually is.
 """
 import math
 import random
@@ -75,7 +75,7 @@ def brute_force_scores(words, query, n_list, exponent, dim=1):
 @pytest.mark.parametrize('exponent', [0.0, 0.5, 1.0, 2.0, 4.0])
 @pytest.mark.parametrize('n_list', [(2,), (1,), (2, 4), (1, 2, 3)])
 @pytest.mark.parametrize('query', ['helo', 'hello', 'banana', 'clemetni', 'zzz', 'pineaple'])
-def test_pruning_stays_exact_when_weighted(exponent, n_list, query):
+def test_scores_stay_exact_when_weighted(exponent, n_list, query):
     """the index must return exactly what an exhaustive weighted scan returns"""
     index = ApproxWordListV7(n_list, idf_exponent=exponent)
     index.add_words(WORDS)
@@ -91,10 +91,9 @@ def test_pruning_stays_exact_when_weighted(exponent, n_list, query):
 @pytest.mark.parametrize('exponent', [0.0, 1.0, 2.0, 4.0])
 def test_small_top_k_over_a_large_vocabulary_still_exact(exponent):
     """
-    the test above passes top_k=len(WORDS), so `bounds >= kth_best / 2` keeps everything and the
-    pruning branch never actually runs. this one asks for a handful of results out of hundreds of
-    words over a small alphabet, so the bound genuinely discards candidates -- which is the only
-    way to catch a weighted numerator paired with an unweighted bound.
+    the test above passes top_k=len(WORDS), so the top-k selection keeps everything. this one
+    asks for a handful of results out of hundreds of words over a small alphabet, where many
+    words share most of the query's n-grams and the k-th best is decided by the weights
     """
     rng = random.Random(11)
     alphabet = 'abcdefg'
@@ -119,12 +118,13 @@ def test_small_top_k_over_a_large_vocabulary_still_exact(exponent):
 @pytest.mark.parametrize('exponent', [0.0, 1.0, 2.0])
 def test_top_k_agrees_with_a_full_scan(exponent):
     """
-    pruning to top_k must not change the scores that come back, only how many
+    a small top_k must not change what comes back, only how much of it
 
-    compares the score sequence rather than the (word, score) pairs: V7 documents that equal
-    scores come back in alphabetical order, but that only holds within one call -- which of two
-    tied words survives depends on top_k, e.g. 'hubz' at k=3 returns 'help' where the full scan
-    returns the alphabetically earlier 'hell'. that predates idf and is unrelated to it.
+    this compares the (word, score) pairs, not just the scores. until 2026-09-06 that would
+    have failed: which of two tied words survived depended on top_k ('hubz' at k=3 returned
+    'help' where the full scan returned the alphabetically earlier 'hell'). the selection is
+    now tie-inclusive at the boundary and alphabetical within a tie, so a prefix of the full
+    ranking is what every k returns
     """
     index = ApproxWordListV7((2, 4), idf_exponent=exponent)
     index.add_words(WORDS)
@@ -132,6 +132,7 @@ def test_top_k_agrees_with_a_full_scan(exponent):
         full = index.lookup(query, top_k=len(WORDS), normalize=True)
         for k in (1, 3, 5):
             actual = index.lookup(query, top_k=k, normalize=True)
+            assert [word for word, _ in actual] == [word for word, _ in full[:k]], (query, k, exponent)
             assert [score for _, score in actual] == pytest.approx([score for _, score in full[:k]]), \
                 (query, k, exponent)
 

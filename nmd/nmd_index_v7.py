@@ -10,14 +10,12 @@ API-compatible with apart from the return type of `lookup()` (see its docstring)
 measured against V6 on a 41.5k-word english vocabulary with n=(2, 4), this is roughly
 20x faster per lookup and uses about a tenth of the memory. what changed:
 
-* the candidate-generation pass reads a flat `n_gram -> [word_index, ...]` posting list
-  and accumulates with `np.bincount`, instead of a python loop over `(word_index, count)`
-  tuples. this needs neither the `__ngram_counts` nor the `__ngram_positions` index
+* scoring reads flat `n_gram -> [word_index, ...]` posting arrays and accumulates with
+  `np.bincount`, instead of a python loop over `(word_index, count)` tuples. this needs
+  neither the `__ngram_counts` nor the `__ngram_positions` index
 * the score-combining and top-k threshold steps are array ops over the whole vocabulary
   rather than a python loop over every touched word (which was V6's real bottleneck --
   emd was only ~7% of a V6 lookup)
-* `mean(2 * v, dim) == 2 * mean(v, dim)`, so the pruning bound is derived from the score
-  that was already computed instead of recomputing a mean over a doubled vector
 * n-grams that occur exactly once in a word (~98% of postings) are stored as two parallel
   arrays, so their emd reduces to a vectorised `2 - abs(x - y)` with no python loop at all.
   the general dynamic-programming emd only runs for repeated n-grams
@@ -27,10 +25,15 @@ measured against V6 on a 41.5k-word english vocabulary with n=(2, 4), this is ro
 V6's `filter_n` prefilter is gone: it existed to keep the python candidate loop short, and
 once that loop is vectorised it costs more (in memory and build time) than it saves.
 
-the pruning is exact, not lossy. a word sharing an n-gram at counts (c1, c2) has similarity
-in [min(c1, c2), 2 * min(c1, c2)], so summed min-counts bracket the true score and the
-bound can only discard words that genuinely cannot reach the top k -- `lookup` returns the
-same scores an exhaustive scan would (see tests/test_index_v7.py).
+there is no candidate pruning: every posting of every query n-gram is scored, exactly, by one
+weighted `np.bincount` per n, and the top k is a partial sort of the resulting vocabulary-sized
+score array. until 2026-09-06 a first pass computed a count-based bound per word (a word
+sharing an n-gram at counts (c1, c2) has similarity in [min(c1, c2), 2 * min(c1, c2)]) and
+masked out words that could not reach the top k. the bound was sound but never saved work --
+the scoring pass ran over every posting regardless, and restricting it to the survivors
+measured 0.81-1.09x -- so it was a second pass over the postings for nothing, 27% of a lookup
+on a 300k-phrase index. `lookup` returns what an exhaustive scan would, and
+tests/test_index_v7.py pins that from the outside.
 """
 import math
 from typing import Dict
@@ -190,9 +193,8 @@ class ApproxWordListV7:
             keeps the unweighted code path, bit-for-bit.
 
             idf is a scalar per n-gram type and the emd is computed per type, so weighting cannot
-            change any matching decision -- only the aggregation. the two-sided count bound that
-            drives pruning stays valid for the same reason: a shared n-gram's contribution is in
-            [w * min(c1, c2), 2 * w * min(c1, c2)] for any non-negative w.
+            change any matching decision -- only the aggregation: a shared n-gram's contribution
+            is in [w * min(c1, c2), 2 * w * min(c1, c2)] for any non-negative w.
 
             whether it helps is domain-dependent, and the two obvious domains disagree (measured
             in docs/bow-plan.md parts 6-7). matching product names, where a rare n-gram is usually
@@ -244,7 +246,15 @@ class ApproxWordListV7:
         # "query n-gram occurs once, indexed word repeats it" branch only needs a minimum per
         # word, which `np.minimum.reduceat` computes over the flat array in one call instead of
         # a python loop with a generator-expression `min` per posting. built in `_freeze`
-        self._multi_flat: List[Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]] = [
+        self._multi_flat: List[Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]] = [
+            dict() for _ in self._n_list]
+        # and the same postings grouped by occurrence count, for the "both sides repeat" branch:
+        # n_gram -> [(count, word indices, (rows, count) locations, [location tuples]), ...].
+        # pass 2 used to build this grouping per lookup, which on phrases -- where " e" or "e "
+        # repeats in nearly every document -- was a python loop over a few hundred thousand
+        # postings per query. the tuples are the same objects `_multi` holds, kept for the
+        # scalar dp fallback that small groups take
+        self._multi_groups: List[Dict[str, List[Tuple[int, np.ndarray, np.ndarray, list]]]] = [
             dict() for _ in self._n_list]
 
         # writes land here and are merged into the numpy arrays by `_freeze`, so that the
@@ -375,6 +385,7 @@ class ApproxWordListV7:
             words_by_gram = self._words[n_idx]
             locs_by_gram = self._locs[n_idx]
             multi_flat = self._multi_flat[n_idx]
+            multi_groups = self._multi_groups[n_idx]
 
             for n_gram in self._pending_grams[n_idx]:
                 # word indices are laid out [single-occurrence..., multi-occurrence...] so
@@ -412,15 +423,28 @@ class ApproxWordListV7:
                                           dtype=np.int64, count=len(multi_entries))
                     offsets = np.zeros(len(multi_entries), dtype=np.int64)
                     np.cumsum(lengths[:-1], out=offsets[1:])
-                    multi_flat[n_gram] = (
-                        np.concatenate([np.asarray(locs, dtype=np.float64)
-                                        for _, locs in multi_entries]),
-                        offsets,
-                        np.fromiter((wi for wi, _ in multi_entries),
-                                    dtype=np.int64, count=len(multi_entries)),
-                    )
+                    multi_idxs = np.fromiter((wi for wi, _ in multi_entries),
+                                             dtype=np.int64, count=len(multi_entries))
+                    flat_locs = np.concatenate([np.asarray(locs, dtype=np.float64)
+                                                for _, locs in multi_entries])
+                    multi_flat[n_gram] = (flat_locs, offsets, multi_idxs, lengths)
+
+                    # group by occurrence count, preserving posting order within each group
+                    # and first-seen order between groups, so that the scatter-adds in pass 2
+                    # happen in exactly the order the per-lookup grouping produced
+                    by_count: Dict[int, List[Tuple[int, Tuple[float, ...]]]] = dict()
+                    for entry in multi_entries:
+                        by_count.setdefault(len(entry[1]), []).append(entry)
+                    multi_groups[n_gram] = [
+                        (count,
+                         np.fromiter((wi for wi, _ in group), dtype=np.int32, count=len(group)),
+                         np.array([locs for _, locs in group], dtype=np.float64),
+                         [locs for _, locs in group])
+                        for count, group in by_count.items()
+                    ]
                 else:
                     multi_flat.pop(n_gram, None)
+                    multi_groups.pop(n_gram, None)
 
             pending_words.clear()
             pending_locs.clear()
@@ -492,16 +516,32 @@ class ApproxWordListV7:
 
     def _similarity_vectors(self,
                             word: str,
-                            top_k: int,
                             normalize: bool,
                             dim: Union[int, float],
                             position_weight: float = 1.0,
                             denominator: str = 'dice',
                             ) -> Optional[Tuple[List[np.ndarray], np.ndarray]]:
         """
-        returns (per-n similarity arrays, boolean candidate mask), or None if nothing matched
+        returns (per-n similarity arrays, their power mean over n), or None if nothing matched
 
-        the similarity arrays are only meaningful where the candidate mask is set
+        every entry is the exact similarity of that word to the query; a word sharing no n-gram
+        with it scores exactly 0.0. this scores every posting of every query n-gram in one
+        weighted `np.bincount` per n, with the contributions concatenated in query n-gram order
+        so that each word's terms are summed in the same sequence a per-n-gram scatter-add
+        would have used (bincount accumulates sequentially), which keeps it bit-identical.
+
+        ⚠ there is no pruning pass any more, on purpose. until 2026-09-06 a first pass computed a
+        count-based lower bound per word, took the k-th best, and masked out words whose upper
+        bound (exactly twice the lower) could not reach it. the bound was sound, but this pass
+        never used it to skip work -- restricting the scoring to the surviving words was measured
+        at 0.81-1.09x, because the mask gather costs what the scatter it replaces costs -- so the
+        bound's only remaining effect was to shrink the final partial sort, at the price of a
+        second full pass over the postings: concatenate, bincount, astype, a vocabulary-sized
+        divide, a power mean and a partition, 27% of a lookup at 300k phrases. the exact scores
+        select the same top k directly (a word outside the old candidate set had upper bound
+        strictly below the k-th best lower bound, so it could not even tie), which is what
+        `tests/test_index_v7.py::TestScoring::test_top_k_matches_an_exhaustive_scan` pins from
+        the outside
         """
         self._freeze()
         vocab_size = len(self._word_list)
@@ -514,84 +554,16 @@ class ApproxWordListV7:
         # the query side of the denominator; identical to query_num_grams when unweighted
         query_totals = [self._query_total(n_idx, query_grams[n_idx], query_num_grams[n_idx])
                         for n_idx in range(num_n)]
-
-        # --- pass 1: cheap lower bound on similarity, from n-gram counts alone -------------
-        # for a word sharing an n-gram with counts (c1, c2), similarity is in
-        # [min(c1, c2), 2 * min(c1, c2)], so summed min-counts bound the final score
-        counts: List[np.ndarray] = []
-        for n_idx in range(num_n):
-            words_by_gram = self._words[n_idx]
-            multi = self._multi[n_idx]
-
-            query_counts: Dict[str, int] = dict()
-            for n_gram in query_grams[n_idx]:
-                query_counts[n_gram] = query_counts.get(n_gram, 0) + 1
-
-            matched = [n_gram for n_gram in query_counts if n_gram in words_by_gram]
-            chunks = [words_by_gram[n_gram] for n_gram in matched]
-            if not chunks:
-                counts.append(np.zeros(vocab_size, dtype=np.float64))
-                continue
-
-            if self._weighted:
-                # every posting of an n-gram carries that n-gram's weight, so a weighted bincount
-                # is the same min-count bound with w(g) folded in. it stays two-sided, because
-                # scaling each term by a non-negative constant scales both ends of its range
-                posting_weights = np.concatenate(
-                    [np.full(words_by_gram[n_gram].size, self._gram_weight(n_idx, n_gram))
-                     for n_gram in matched])
-                bincount = np.bincount(np.concatenate(chunks), weights=posting_weights,
-                                       minlength=vocab_size)
-            else:
-                bincount = np.bincount(np.concatenate(chunks), minlength=vocab_size).astype(np.float64)
-            # bincount credited every posting with 1; correct the few that should count more
-            for n_gram, query_count in query_counts.items():
-                if query_count > 1:
-                    weight = self._gram_weight(n_idx, n_gram) if self._weighted else 1.0
-                    for other_word_index, other_locs in multi.get(n_gram, ()):
-                        other_count = len(other_locs)
-                        bincount[other_word_index] += weight * (min(query_count, other_count) - 1)
-            counts.append(bincount)
-
-        # the bound pass and the score pass normalize by the same per-word divisor, so it is
-        # computed once here rather than twice. profiled 2026-09-06 at a 300k vocabulary,
-        # `_denominator` ran 160 times for 40 lookups (4 per lookup, 2 of them redundant) and was
-        # 33% of the lookup -- it is a vocabulary-sized array op, so the duplicate is not cheap
         denominators = ([self._denominator(n_idx, query_totals[n_idx], denominator)
                          for n_idx in range(num_n)] if normalize else None)
 
-        if normalize:
-            bound_parts = [counts[n_idx] / denominators[n_idx] for n_idx in range(num_n)]
-        else:
-            bound_parts = counts
-        bounds = _generalized_mean(bound_parts, dim)
-
-        touched = bounds > 0
-        if not touched.any():
-            return None
-
-        # --- prune to words that could still make the top k --------------------------------
-        # the upper bound is exactly twice the lower bound, and
-        # mean(2 * v, dim) == 2 * mean(v, dim), so compare against half the k-th best bound
-        nonzero_bounds = bounds[touched]
-        k = min(top_k, nonzero_bounds.size)
-        kth_best = -np.partition(-nonzero_bounds, k - 1)[k - 1]
-        candidates = touched & (bounds >= kth_best / 2)
-
-        # --- pass 2: exact emd similarity ---------------------------------------------------
-        # ⚠ this scores every posting of every query n-gram, NOT just the candidates computed
-        # above -- `candidates` only decides which scores get ranked. the bound is a top-k
-        # correctness mechanism here, not a work-saving one. restricting this loop to candidates
-        # is an unexploited optimization: measured 2026-09-06 on 30k words, only 0.9% of the
-        # vocabulary survives the bound at n=(2, 4) top_k=5 (3.5% at top_k=50), so pass 2 is
-        # currently doing ~30x more scatter-add work than the ranking needs
-        scores = [np.zeros(vocab_size, dtype=np.float64) for _ in range(num_n)]
+        scores: List[np.ndarray] = []
+        matched_any = False
         for n_idx in range(num_n):
             words_by_gram = self._words[n_idx]
             locs_by_gram = self._locs[n_idx]
-            multi = self._multi[n_idx]
             multi_flat = self._multi_flat[n_idx]
-            score = scores[n_idx]
+            multi_groups = self._multi_groups[n_idx]
 
             grams = query_grams[n_idx]
             # named for what it divides -- an n-gram's index into a 0..1 position. NOT the
@@ -604,6 +576,11 @@ class ApproxWordListV7:
             elif grams:
                 query_locations[grams[0]] = [0.0]
 
+            # (word indices, contributions) per branch per query n-gram, summed by one bincount
+            # at the end. word indices are unique within one n-gram's postings, so a word gets at
+            # most one term per query n-gram, and the terms arrive in query n-gram order
+            idx_parts: List[np.ndarray] = []
+            val_parts: List[np.ndarray] = []
             for n_gram, locations in query_locations.items():
                 word_idxs = words_by_gram.get(n_gram)
                 if word_idxs is None:
@@ -617,12 +594,19 @@ class ApproxWordListV7:
                     # 1-vs-1 emd is just abs(x - y) (positions are in [0, 1]), so the
                     # similarity contribution 1 + 1 - emd collapses to 2 - abs(x - y), i.e.
                     # 2 * min(c1, c2) - displacement with min(c1, c2) == 1.
-                    # word indices are unique within a posting list, so `+=` on a fancy
-                    # index is a well-defined scatter-add
+                    #
+                    # written in place: `2.0 - w * d` is `(-(w * d)) + 2.0` exactly in ieee
+                    # arithmetic, and these arrays are the longest in the whole lookup (every
+                    # posting of "e " in a phrase corpus), so the temporaries are not free
                     if n_single:
-                        single_idxs = word_idxs[:n_single]
-                        displacement = np.abs(other_locs_arr - locations[0])
-                        score[single_idxs] += weight * (2.0 - position_weight * displacement)
+                        contrib = other_locs_arr - locations[0]
+                        np.abs(contrib, out=contrib)
+                        contrib *= -position_weight
+                        contrib += 2.0
+                        if weight != 1.0:
+                            contrib *= weight
+                        idx_parts.append(word_idxs[:n_single])
+                        val_parts.append(contrib)
 
                     # 1-vs-m emd is min(min_dist, 2) + (m - 1), so the contribution
                     # 1 + m - emd collapses to 2 - min(min_dist, 2), independent of m.
@@ -635,65 +619,75 @@ class ApproxWordListV7:
                     # flattened postings in one call instead
                     flat_entry = multi_flat.get(n_gram)
                     if flat_entry is not None:
-                        flat_locs, offsets, multi_idxs = flat_entry
+                        flat_locs, offsets, multi_idxs, _ = flat_entry
                         min_dist = np.minimum.reduceat(np.abs(flat_locs - locations[0]), offsets)
                         np.minimum(min_dist, 2.0, out=min_dist)
-                        score[multi_idxs] += weight * (2.0 - position_weight * min_dist)
+                        idx_parts.append(multi_idxs)
+                        val_parts.append(weight * (2.0 - position_weight * min_dist))
                 else:
-                    # the query n-gram repeats: same collapse with the roles swapped
+                    # the query n-gram repeats: same collapse with the roles swapped. the
+                    # nearest query position is found with one running minimum per position,
+                    # not a (postings, m) broadcast -- same values, no 2-d temporary and no
+                    # reduction over a tiny axis, which measured 8.8 ms of a 78 ms lookup
                     n_locations = len(locations)
                     if n_single:
-                        single_idxs = word_idxs[:n_single]
-                        min_dist = np.abs(other_locs_arr[:, None] - np.asarray(locations)).min(axis=1)
+                        min_dist = np.abs(other_locs_arr - locations[0])
+                        for location in locations[1:]:
+                            np.minimum(min_dist, np.abs(other_locs_arr - location), out=min_dist)
                         np.minimum(min_dist, 2.0, out=min_dist)
-                        score[single_idxs] += weight * (2.0 - position_weight * min_dist)
+                        idx_parts.append(word_idxs[:n_single])
+                        val_parts.append(weight * (2.0 - position_weight * min_dist))
 
                     # both sides repeat. emd splits into the unavoidable unmatched mass
                     # abs(c1 - c2) plus the displacement of the mass that did match, and
                     # c1 + c2 - abs(c1 - c2) is exactly 2 * min(c1, c2), so this is the same
                     # form as the branches above.
                     #
-                    # postings are grouped by occurrence count so each group shares a dp shape
-                    # and can be solved as one batch. both branches below need every location
-                    # list ascending, which holds by construction -- `add_word` and the query
-                    # loop above append in increasing index order -- and is pinned by
-                    # `tests/test_index_v7_knobs.py::TestPresortedLocations`, because losing it
-                    # would return silently wrong distances rather than raise
-                    entries = multi.get(n_gram)
-                    if entries:
-                        by_count: Dict[int, List[Tuple[int, Tuple[float, ...]]]] = dict()
-                        for other_word_index, other_locs in entries:
-                            by_count.setdefault(len(other_locs), []).append(
-                                (other_word_index, other_locs))
+                    # postings are grouped by occurrence count (in `_freeze`) so each group
+                    # shares a dp shape and can be solved as one batch. both branches below
+                    # need every location list ascending, which holds by construction --
+                    # `add_word` and the query loop above append in increasing index order --
+                    # and is pinned by `tests/test_index_v7_knobs.py::TestPresortedLocations`,
+                    # because losing it would return silently wrong distances rather than raise
+                    groups = multi_groups.get(n_gram)
+                    if groups:
                         query_locs = np.asarray(locations, dtype=np.float64)
-                        for other_count, group in by_count.items():
-                            group_idxs = np.fromiter((wi for wi, _ in group),
-                                                     dtype=np.int32, count=len(group))
-                            other = np.array([locs for _, locs in group], dtype=np.float64)
+                        for other_count, group_idxs, other, group_locs in groups:
                             if other_count == n_locations:
                                 # equal masses: nothing goes unmatched, so in one dimension the
                                 # optimal transport is the monotone (sorted) matching and the
                                 # displacement is just the sum of paired differences -- no dp
                                 displacement = np.abs(other - query_locs).sum(axis=1)
-                            elif len(group) >= _EMD_BATCH_MIN_ROWS:
+                            elif group_idxs.size >= _EMD_BATCH_MIN_ROWS:
                                 displacement = _emd_1d_batch(
                                     np.broadcast_to(query_locs,
-                                                    (len(group), n_locations)), other)
+                                                    (group_idxs.size, n_locations)), other)
                                 displacement = displacement - abs(n_locations - other_count)
                             else:
                                 # too few rows to amortise numpy's per-operation overhead; the
                                 # batched dp costs m*n array ops either way, so a small group
                                 # pays that overhead without spreading it over anything
                                 displacement = np.fromiter(
-                                    (emd_1d_dp(locations, locs) for _, locs in group),
-                                    dtype=np.float64, count=len(group))
+                                    (emd_1d_dp(locations, locs) for locs in group_locs),
+                                    dtype=np.float64, count=group_idxs.size)
                                 displacement = displacement - abs(n_locations - other_count)
-                            score[group_idxs] += weight * (2.0 * min(n_locations, other_count)
-                                                           - position_weight * displacement)
+                            idx_parts.append(group_idxs)
+                            val_parts.append(weight * (2.0 * min(n_locations, other_count)
+                                                       - position_weight * displacement))
 
-        if normalize:
-            scores = [scores[n_idx] / denominators[n_idx] for n_idx in range(num_n)]
-        return scores, candidates
+            if idx_parts:
+                matched_any = True
+                score = np.bincount(np.concatenate(idx_parts), weights=np.concatenate(val_parts),
+                                    minlength=vocab_size)
+                if normalize:
+                    score /= denominators[n_idx]
+            else:
+                score = np.zeros(vocab_size, dtype=np.float64)
+            scores.append(score)
+
+        if not matched_any:
+            return None
+        return scores, _generalized_mean(scores, dim)
 
     def _denominator(self, n_idx: int, query_total: float, denominator: str = 'dice') -> np.ndarray:
         """
@@ -736,8 +730,8 @@ class ApproxWordListV7:
         than a tuple of (index score, recomputed nmd) -- the index score already *is* the
         exact nmd similarity, so there was nothing for the second value to add
 
-        results are always *ranked* by similarity, because that is what the index can prune
-        on soundly. `invert` only changes how the score is reported, exactly as it does in
+        results are always *ranked* by similarity, because that is what the index computes;
+        ties are broken alphabetically. `invert` only changes how the score is reported, as in
         `ngram_movers_distance`. with `normalize=True` distance is just `1 - similarity`, so
         the reported scores increase monotonically down the list; with `normalize=False` an
         un-normalized distance also grows with word length, so the reported values are not
@@ -770,15 +764,16 @@ class ApproxWordListV7:
             (train AP 0.464 order-blind vs 0.441 for full nmd -- the displacement removes 7.2%
             of the score on true matches but only 6.7% on non-matches, so it costs separation).
 
-            values above 1.0 are rejected rather than clamped, because they would break
-            pruning: the two-sided bound needs the contribution to stay within
-            [min(c1, c2), 2 * min(c1, c2)], and `displacement <= min(c1, c2)` only bounds
-            `position_weight * displacement` from above while the weight is at most 1
+            values above 1.0 are rejected rather than clamped: `displacement <= min(c1, c2)`
+            keeps the contribution within [min(c1, c2), 2 * min(c1, c2)] only while the weight
+            is at most 1. past that a shared n-gram counts for less than one shared unit, and
+            past 2.0 it can go negative -- a word sharing an n-gram could then score below a
+            word sharing none, which the "unshared scores exactly 0 and is never returned"
+            rule of `lookup` assumes cannot happen
         :param denominator: `dice` (the default) normalizes by `total_query + total_word`;
             `geo` normalizes by `2 * sqrt(total_query * total_word)`. only has any effect when
             `normalize=True`. docs/bow-plan.md part 6 measured geo above dice on product names
-            at every idf exponent it tried. both are per-word positive scalars, so either one
-            preserves pruning
+            at every idf exponent it tried. both are per-word positive scalars
         :return: [(word, score), ...], most similar first
         """
         if not isinstance(word, str):
@@ -794,27 +789,28 @@ class ApproxWordListV7:
         if isinstance(position_weight, bool) or not isinstance(position_weight, (int, float)):
             raise TypeError(position_weight)
         if not 0.0 <= position_weight <= 1.0:
-            raise ValueError(position_weight)  # outside [0, 1] the pruning bound stops holding
+            raise ValueError(position_weight)  # outside [0, 1] a shared n-gram can score < 0
         if denominator not in ('dice', 'geo'):
             raise ValueError(denominator)
 
         if self._case_insensitive:
             word = word.casefold()
 
-        found = self._similarity_vectors(word, top_k, normalize, dim, position_weight, denominator)
+        found = self._similarity_vectors(word, normalize, dim, position_weight, denominator)
         if found is None:
             return []
-        scores, candidates = found
+        scores, combined = found
 
-        combined = _generalized_mean(scores, dim)
-        candidate_idxs = np.flatnonzero(candidates)
+        # partial sort over the whole vocabulary for the k-th best score, then keep every word
+        # at or above it -- *including* ties at the boundary, which a bare `argpartition` would
+        # split arbitrarily; the alphabetical tie-break below then decides which of them are
+        # returned. words sharing no n-gram score exactly 0 and are never returned
+        if combined.size > top_k:
+            kth_best = combined[np.argpartition(combined, combined.size - top_k)[-top_k]]
+        else:
+            kth_best = 0.0
+        candidate_idxs = np.flatnonzero(combined >= kth_best if kth_best > 0 else combined > 0)
         candidate_scores = combined[candidate_idxs]
-
-        # partial sort: we only need the best top_k of what survived pruning
-        if candidate_idxs.size > top_k:
-            best = np.argpartition(-candidate_scores, top_k - 1)[:top_k]
-            candidate_idxs = candidate_idxs[best]
-            candidate_scores = candidate_scores[best]
 
         query_num_grams = [num_n_grams(len(word), n) for n in self._n_list]
 
@@ -823,7 +819,7 @@ class ApproxWordListV7:
         # the same number every time -- and only differed in the last bit or two of float
         # noise, which made tie order depend on summation order. sort on the word instead
         ranked = sorted(zip(candidate_idxs.tolist(), candidate_scores.tolist()),
-                        key=lambda pair: (-pair[1], self._word_list[pair[0]]))
+                        key=lambda pair: (-pair[1], self._word_list[pair[0]]))[:top_k]
 
         if invert:
             return [(self._word_list[wi], score) for wi, score in ranked]

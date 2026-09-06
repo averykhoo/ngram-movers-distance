@@ -2,8 +2,9 @@
 Tests for the numpy-backed ApproxWordListV7 index.
 
 The important property is that V7's approximate index score equals the exact n-gram
-mover's distance similarity it is meant to approximate -- the pruning it does to avoid
-scoring the whole vocabulary is supposed to be exact, not lossy.
+mover's distance similarity it is meant to approximate, and that the top k it returns is
+what an exhaustive scan would return -- V7 scores every posting, so there is no lossy
+shortcut anywhere for a score or a ranking to hide behind.
 """
 import random
 
@@ -179,8 +180,7 @@ class TestScoring:
     @pytest.mark.parametrize('normalize', [False, True])
     def test_score_equals_exact_nmd(self, n_list, normalize):
         """
-        the whole point of the index: its score is the real thing, not an approximation.
-        the count-based pruning bound is exact, so it must never change a score.
+        the whole point of the index: its score is the real thing, not an approximation
         """
         word_list = ApproxWordListV7(n_list).add_words(WORDS)
         for query in ['helo', 'yelow', 'banan', 'abab', 'a', 'ab', 'assalamalaikum']:
@@ -189,8 +189,12 @@ class TestScoring:
                 assert score == pytest.approx(expected, abs=1e-12), (query, word)
 
     @pytest.mark.parametrize('normalize', [False, True])
-    def test_pruning_never_drops_a_true_top_k(self, normalize):
-        """compare against an exhaustive scan of the vocabulary"""
+    def test_top_k_matches_an_exhaustive_scan(self, normalize):
+        """
+        compare against an exhaustive scan of the vocabulary. this is the outside view of the
+        whole lookup: whatever the index does internally to find the top k, it must return
+        the same scores an exhaustive scan would, rank for rank
+        """
         n_list = (2, 4)
         random.seed(12345)
         vocab = WORDS + [''.join(random.choice('abcdefg') for _ in range(random.randint(2, 9)))
@@ -218,6 +222,23 @@ class TestScoring:
     def test_ties_are_ordered_alphabetically(self):
         word_list = ApproxWordListV7((2, 4)).add_words(['hello', 'yellow', 'mellow', 'bellow'])
         assert [w for w, _ in word_list.lookup('helo')] == ['hello', 'bellow', 'mellow', 'yellow']
+
+    def test_ties_at_the_top_k_boundary_are_ordered_alphabetically(self):
+        """
+        the alphabetical tie-break has to decide which tied words make the cut, not just how
+        the survivors are ordered. until 2026-09-06 the partial sort picked among boundary ties
+        arbitrarily and only the picked ones were sorted, so `top_k=2` could return
+        ['hello', 'mellow']; measured on a 300k-word vocabulary that happened in 38 of 120
+        top-10 lookups. a top-k lookup must be a prefix of the exhaustive ranking
+        """
+        words = ['hello', 'yellow', 'mellow', 'bellow', 'fellow', 'cello', 'jello']
+        word_list = ApproxWordListV7((2, 4)).add_words(words)
+        full = word_list.lookup('helo', top_k=len(words), position_weight=0.0)
+        scores = [s for _, s in full]
+        # cello/jello tie, and the four *ellow words tie, so most of the cuts below split a tie
+        assert max(scores.count(s) for s in scores) >= 3, 'the fixture must tie across the cut'
+        for top_k in range(1, len(words) + 1):
+            assert word_list.lookup('helo', top_k=top_k, position_weight=0.0) == full[:top_k]
 
     @pytest.mark.parametrize('dim', [1, 2, 3, 0.5])
     def test_dim_is_a_power_mean(self, dim):

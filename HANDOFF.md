@@ -99,7 +99,9 @@ words survive the `isalpha`, 3-15 char filter):
   division, the power mean, and the `touched` / `candidates` masks -- on top of O(postings)
   scatter-adds.
 * **39.6% of a 300k vocabulary gets a nonzero score** at `n=(2,4)`; bigrams are not selective at
-  that scale. Only **0.7% (2 086 words) survive the pruning bound.**
+  that scale. Only **0.7% (2 086 words) survived the pruning bound** -- which turned out not to
+  matter, see the second round below: the bound was removed because computing it cost more than
+  it ever saved.
 * `dim=2` and `denominator='geo'` are what make the tuned settings slower at scale: both add
   vocabulary-sized math. At 300k, `d1/dice` 25.0 ms/query against `d2/geo` 39.4 ms.
 
@@ -162,6 +164,63 @@ amount and each failed to move the wall clock. The two changes that *did* pay --
 1-vs-m branch (2.4-2.5x) and the duplicate `_denominator` (1.13x) -- were both found by profiling
 and were both in code nobody had looked at, not in the algorithm everyone assumed was hot.
 **Profile first; do not reason from operation counts.**
+
+### Large vocabularies, second round: 1M phrases, and the pruning pass is gone (2026-09-06)
+
+The 300k run above was single words. `experiments/large_vocab_bench.py` (new, tracked -- the
+300k run had no script behind it) indexes **1 000 000 phrases of 2-5 dictionary words** (mean
+34.5 chars) at `n=(2,4)`, queries with 1-3 character edits and, every third query, a dropped
+word. This is the regime the owner called "near pathological, where you'd use elasticsearch":
+the space character makes `"e "`-type bigrams repeat within a document, so 8% of n=2 postings
+(2.62M, 2.10 locations each) land on the `_multi` path the index was never tuned for, and a
+query touches **95.4% of the vocabulary**. Build 169 s, RSS 155 → 4035 MB.
+
+| variant (1M phrases, d1/dice, 60 queries, min of 1) | mean | median | max |
+|---|---:|---:|---:|
+| HEAD `8c03195` | 687 ms | 544 ms | 2493 ms |
+| + `_multi_groups` built in `_freeze` | 381 ms | 360 ms | 768 ms |
+| + pass 1 removed, one `bincount` per n (landed) | **175 ms** | 161 ms | 357 ms |
+
+`d2/geo` tracks it at 188 ms mean. MRR 0.992 throughout (the task is speed-only; it does not
+discriminate quality). Two changes, each found by cProfile, each bit-identical to HEAD
+(`.scratch/check_multi_groups.py`: 2016 lookups over 4 n-lists × 2 idf × 4 lookup configs with
+interleaved `add_word`, 0 ranking differences, worst score difference 0.0):
+
+1. **80% of the HEAD lookup was python loops over multi-postings** -- the pass-1 count
+   correction and the pass-2 `by_count` grouping, 1.95M iterations per 20 lookups. Grouping
+   by occurrence count now happens once in `_freeze` (`_multi_groups`, alongside the 4-tuple
+   `_multi_flat`) and the lookup iterates groups, not postings. 1.8x.
+2. **Pass 1 (the count-based pruning bound) is removed.** Stage timing at 300k phrases put it
+   at 21 of 78 ms (27%): concatenate, bincount, astype, a vocabulary-sized divide, a power mean
+   and a partition -- a second full pass over the postings whose only effect was to shrink the
+   final partial sort, since "restricting pass 2 to candidates" had already been measured at
+   0.81-1.09x and rejected. Scoring is now one weighted `np.bincount` per n over the
+   concatenated `(word index, contribution)` parts of every query n-gram, with the 1-vs-1
+   arithmetic done in place. Bit-identity argument: bincount accumulates sequentially in array
+   order, the parts are concatenated in query n-gram order, and `2.0 - w*d == (-(w*d)) + 2.0`
+   in IEEE. 300k phrases, separate processes, min of 2: **179 → 43 ms d1/dice, 186 → 46 ms
+   d2/geo (4.2x)**; 300k single words 29.5 → 17.4 ms, 36.9 → 21.4 ms (1.7x).
+
+**One behaviour change, deliberate:** the top-k selection is now tie-inclusive at the k-th
+score, then sorted `(-score, word)` and truncated, so a boundary tie is always resolved
+alphabetically and `lookup(top_k=k)` is a prefix of `lookup(top_k=len(index))` for every k.
+HEAD's `argpartition` split boundary ties arbitrarily (38 of 120 top-10 lookups on 300k words
+differ, all score-identical; `test_top_k_agrees_with_a_full_scan` in `test_index_v7_idf.py`
+documented the old `'hubz'` case and now asserts the words too). New pin:
+`tests/test_index_v7.py::test_ties_at_the_top_k_boundary_are_ordered_alphabetically`,
+verified red on HEAD's index.
+
+**What is left at 1M** (cProfile, 20 queries, 27k function calls total -- the python loops are
+gone): 70% of the time is array arithmetic inside `_similarity_vectors` itself over roughly 5M
+postings per query (1.43M measured at 300k phrases, and it scales with the index), `reduceat` 9%,
+`_denominator` 5%, `_emd_1d_batch` 4%, `argpartition` 3.5%. The remaining cost is memory
+bandwidth over postings and vocabulary-sized arrays, i.e. the O(postings + vocabulary) design.
+Getting under ~50 ms at 1M would need a different index (n≥3 keys so bigrams stop touching 95%
+of the vocabulary, or WAND-style upper-bound skipping over sorted postings), not more numpy.
+
+The pattern held a fourth and fifth time: both wins were in code found by profiling (python
+loops the 300k single-word profile never exercised, because single words have almost no
+repeated n-grams), and the "sound but useless" pruning bound was a cost, not a saving.
 
 ⚠ **`normalize` and `idf_exponent` substitute for each other** -- both counteract length bias,
 so applying both over-corrects. On abtbuy `normalize=True` is worth +0.145 MAP at
@@ -542,7 +601,10 @@ get fixed.
 * **A/B a function by running separate processes, not by rebinding a module global.** Cache
   contents and GC state carry over between in-process variants and gave a misleading result
   once already (`.scratch/check_cache.py` vs `check_cache2.py`).
-* **V7's pruning is exact, not lossy.** Similarity for a shared n-gram at counts `(c1, c2)`
-  lies in `[min(c1,c2), 2*min(c1,c2)]`, so summed min-counts bracket the true score. If you
-  change the scoring, that two-sided bound is the invariant to preserve, and
-  `tests/test_index_v7.py::test_pruning_never_drops_a_true_top_k` is what checks it.
+* **V7 has no pruning pass any more (removed 2026-09-06, see "Large vocabularies, second
+  round").** It scores every posting exactly and partial-sorts the vocabulary-sized score
+  array. The invariant is now simply "the top k equals an exhaustive scan, ties alphabetical",
+  pinned by `tests/test_index_v7.py::TestScoring::test_top_k_matches_an_exhaustive_scan` and
+  `test_ties_at_the_top_k_boundary_are_ordered_alphabetically`. The two-sided count bound
+  (`[min(c1,c2), 2*min(c1,c2)]` per shared n-gram) is still true and is still what keeps
+  `position_weight` inside `[0, 1]`; it just no longer drives anything.

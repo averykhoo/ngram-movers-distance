@@ -113,11 +113,55 @@ faster already.
 ⚠ **Rejected: precomputing `sqrt(totals)` for the geo denominator.** `sqrt(a*b)` and
 `sqrt(a)*sqrt(b)` differ by ~2.7e-16, so it would trade exactness for speed. Not taken.
 
-**The one structural idea left** is restricting pass 2 to the 0.7% of words that survive the
-bound -- it currently scores every posting (see the ⚠ comment above pass 2). Payoff is genuinely
-uncertain: masking a posting list by candidate membership is itself O(posting length), which is
-the same order as the scatter-add it would avoid. **Measure before building**; two dp
-optimisations this session reduced work exactly as predicted and moved the wall clock not at all.
+**Landed: precomputed `sqrt(totals)` for the geo denominator, 1.20-1.24x.**
+`sqrt(total * query_total) == sqrt(total) * sqrt(query_total)`, so the per-word half is computed
+once in `_freeze` and the lookup does an array-scalar multiply instead of a vocabulary-sized
+sqrt. At 300k: `d1/geo` 35.45 -> 29.45 ms, `d2/geo` 38.41 -> 30.98 ms; the dice path is untouched.
+
+⚠ **This is the one deliberate exactness trade in the whole line of work** -- the two forms differ
+by ~2.7e-16 relative. It was measured, not argued: across 11 configurations on typo, typo_hard,
+abtbuy and ermagellan, **MAP and NDCG@10 are identical to five decimal places in every one**. The
+only effect is 9 tie-order flips across 660 ranked lists, none of which move a metric, because
+reordering only happens where scores were already tied.
+
+### ⚠ Restricting pass 2 to candidates: built, benchmarked, rejected 2026-09-06
+
+Pass 2 scores every posting although only the `candidates` mask can reach the top k -- 0.7% of a
+300k vocabulary. Restricting all four pass-2 branches to candidates is bit-identical (192 lookups,
+0 ranking changes, worst score difference 0.0) and **still not worth it**:
+
+| task | docs | ratio |
+|---|---|---|
+| typo_hard | 30 000 | 1.09x |
+| huge300k | 300 000 | **1.05x** |
+| ermagellan | 1 035 | 0.96x |
+| typo | 8 000 | **0.85x** |
+| abtbuy | 1 079 | **0.81x** |
+
+The hypothesis was that scattering into a 2.4 MB score array thrashes cache while scattering into
+~16 KB of candidates would not. That was wrong in a specific way worth remembering: the mask
+`candidates[posting_idxs]` is *itself* a random-access gather into a vocabulary-sized array, so it
+has the same cache behaviour as the scatter it replaces. The cost moved rather than disappeared,
+and on small corpora the extra pass is pure loss.
+
+### Two ideas that do not apply here
+
+* **Log space** (turn multiplies/divides into adds). The workload is addition-dominated --
+  scatter-adds, `np.bincount`, accumulation across n-grams -- and log space turns *adds* into
+  log-sum-exp. It would make the dominant operation several times more expensive to save ~4
+  vocabulary-sized divisions per lookup, and scores are legitimately 0 for most words.
+* **Caching the dp.** Largely moot since the `reduceat` change: the 1-vs-m branch no longer calls
+  the dp, and 98.2% of what remains is equal-mass and closed-formed, so `typo_hard` at `n=(2,4)`
+  sends *one* pair to the dp. It would only matter for long documents, and item 4 already records
+  a cross-call cache of the same shape measuring 1.2x and being rejected as a hidden global.
+
+### The pattern, now three for three
+
+`banded dp`, `global grouping` and `restricting pass 2` each reduced work by exactly the predicted
+amount and each failed to move the wall clock. The two changes that *did* pay -- `reduceat` on the
+1-vs-m branch (2.4-2.5x) and the duplicate `_denominator` (1.13x) -- were both found by profiling
+and were both in code nobody had looked at, not in the algorithm everyone assumed was hot.
+**Profile first; do not reason from operation counts.**
 
 ⚠ **`normalize` and `idf_exponent` substitute for each other** -- both counteract length bias,
 so applying both over-corrects. On abtbuy `normalize=True` is worth +0.145 MAP at

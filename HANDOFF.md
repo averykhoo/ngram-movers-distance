@@ -79,6 +79,46 @@ bit-for-bit, so it is *not* recommended as a default even though it ranks best o
 ⚠ `n` is deliberately left at `(2,4)` in all of these. `(1,2)` scores better on every typo task
 but is a poor index key (see item 14), so it belongs in per-domain advice rather than a default.
 
+**Decided 2026-09-06: NOT shipping `dim=2` / `denominator='geo'` as defaults.** Changing them
+breaks 302 tests in `tests/test_parity_with_nmd.py`, and correctly so -- that file pins *"V7's
+index score already is the exact nmd similarity"*, i.e. `nmd_per_n_mean`, the arithmetic mean over
+n of `ngram_movers_distance` under Dice normalization. `dim=2` makes it a quadratic power mean and
+`geo` changes the normalization, so `lookup()` would stop computing n-gram mover's distance by
+default. That is categorically different from the `normalize` flip, which stayed inside nmd's own
+API. The tuned settings live in the README table and Part 9 as per-domain advice instead; callers
+opt in. ⚠ Anyone revisiting this should note the cost is real -- defaults give ~76% of each task's
+achievable MAP against ~79% for `dim=2` + `geo`.
+
+### Large vocabularies: what actually costs time
+
+Measured 2026-09-06 on a 300 000-word index drawn from `british-english-insane.txt` (470 351
+words survive the `isalpha`, 3-15 char filter):
+
+* lookup is **O(vocabulary), by design**. Every lookup allocates and operates on several
+  300k-element arrays -- `np.bincount(minlength=vocab_size)` per n, an `astype`, the normalizing
+  division, the power mean, and the `touched` / `candidates` masks -- on top of O(postings)
+  scatter-adds.
+* **39.6% of a 300k vocabulary gets a nonzero score** at `n=(2,4)`; bigrams are not selective at
+  that scale. Only **0.7% (2 086 words) survive the pruning bound.**
+* `dim=2` and `denominator='geo'` are what make the tuned settings slower at scale: both add
+  vocabulary-sized math. At 300k, `d1/dice` 25.0 ms/query against `d2/geo` 39.4 ms.
+
+**Landed (bit-identical, 1.13x on the default path at 300k):** `_denominator` was computed
+**twice per n per lookup** with identical arguments -- once for the bound, once for the score --
+and it is a vocabulary-sized array op. Now computed once. And `_generalized_mean` used
+`parts[0] ** dim`; at `dim == 2` a plain multiply is bit-identical and 1.6x faster on a 200k
+array (0.51 ms -> 0.32 ms). `** 0.5` was left alone: bit-identical to `np.sqrt` but marginally
+faster already.
+
+⚠ **Rejected: precomputing `sqrt(totals)` for the geo denominator.** `sqrt(a*b)` and
+`sqrt(a)*sqrt(b)` differ by ~2.7e-16, so it would trade exactness for speed. Not taken.
+
+**The one structural idea left** is restricting pass 2 to the 0.7% of words that survive the
+bound -- it currently scores every posting (see the ⚠ comment above pass 2). Payoff is genuinely
+uncertain: masking a posting list by candidate membership is itself O(posting length), which is
+the same order as the scatter-add it would avoid. **Measure before building**; two dp
+optimisations this session reduced work exactly as predicted and moved the wall clock not at all.
+
 ⚠ **`normalize` and `idf_exponent` substitute for each other** -- both counteract length bias,
 so applying both over-corrects. On abtbuy `normalize=True` is worth +0.145 MAP at
 `idf_exponent=0` and **-0.079** at `idf_exponent=3`. Any future default change to one has to

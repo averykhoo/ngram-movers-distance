@@ -145,6 +145,16 @@ def _generalized_mean(parts: Sequence[np.ndarray], dim: Union[int, float]) -> np
             out += part
         out /= len(parts)
         return out
+    if dim == 2:
+        # `x ** 2.0` dispatches to numpy's general power; a plain multiply is bit-identical and
+        # measured 1.6x faster on a 200k array (0.51 ms -> 0.32 ms), which matters because this
+        # runs over the whole vocabulary twice per lookup. `** 0.5` is left alone: it is also
+        # bit-identical to `np.sqrt` but marginally *faster*, so there is nothing to win there
+        out = parts[0] * parts[0]
+        for part in parts[1:]:
+            out += part * part
+        out /= len(parts)
+        return out ** 0.5
     out = parts[0] ** dim
     for part in parts[1:]:
         out += part ** dim
@@ -535,9 +545,15 @@ class ApproxWordListV7:
                         bincount[other_word_index] += weight * (min(query_count, other_count) - 1)
             counts.append(bincount)
 
+        # the bound pass and the score pass normalize by the same per-word divisor, so it is
+        # computed once here rather than twice. profiled 2026-09-06 at a 300k vocabulary,
+        # `_denominator` ran 160 times for 40 lookups (4 per lookup, 2 of them redundant) and was
+        # 33% of the lookup -- it is a vocabulary-sized array op, so the duplicate is not cheap
+        denominators = ([self._denominator(n_idx, query_totals[n_idx], denominator)
+                         for n_idx in range(num_n)] if normalize else None)
+
         if normalize:
-            bound_parts = [counts[n_idx] / self._denominator(n_idx, query_totals[n_idx], denominator)
-                           for n_idx in range(num_n)]
+            bound_parts = [counts[n_idx] / denominators[n_idx] for n_idx in range(num_n)]
         else:
             bound_parts = counts
         bounds = _generalized_mean(bound_parts, dim)
@@ -668,8 +684,7 @@ class ApproxWordListV7:
                                                            - position_weight * displacement)
 
         if normalize:
-            scores = [scores[n_idx] / self._denominator(n_idx, query_totals[n_idx], denominator)
-                      for n_idx in range(num_n)]
+            scores = [scores[n_idx] / denominators[n_idx] for n_idx in range(num_n)]
         return scores, candidates
 
     def _denominator(self, n_idx: int, query_total: float, denominator: str = 'dice') -> np.ndarray:

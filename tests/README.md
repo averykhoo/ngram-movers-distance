@@ -17,7 +17,7 @@ in the top-level README):
 | file | needs |
 |---|---|
 | `test_bow.py`, `test_segments.py` | `scipy`, `numpy` |
-| `test_index_v7.py`, `test_index_v7_idf.py` | `numpy` |
+| `test_index_v7.py`, `test_index_v7_idf.py`, `test_search_benchmark.py` | `numpy` |
 | `test_word_set.py`, `test_word_set_idf.py` | `pyroaring`, `regex` |
 | `test_parity_with_nmd.py` | `numpy`, `pyroaring`, `regex` for some classes; skips per fixture |
 
@@ -38,7 +38,8 @@ it is missing — it is the only test file that needs a corpus.
 | `test_word_set_idf.py` | 21 | `WordSet`'s incrementally-maintained idf, against a brute-force document frequency |
 | `test_bow.py` | 59 | `bow_ngram_movers_distance`, plus `emd_1d_fast ≡ emd_1d_dp` (`TestEmd1dFast`) |
 | `test_segments.py` | 50 | `segment_movers_distance` and `align_segments`: split/merge tolerance, `lam` / `mu` |
-| `test_find_replace_trie.py` | 5 | `experiments/find_replace_trie.py` — note this is the only file testing code **outside** the `nmd` package |
+| `test_find_replace_trie.py` | 5 | `experiments/find_replace_trie.py` — code **outside** the `nmd` package |
+| `test_search_benchmark.py` | 17 | `experiments/search_benchmark.py`: the BM25 / tf-idf / edit-distance baselines against hand computations, and the shared ranking, rerank and RRF plumbing. Outside the package too; these scorers produce the numbers V7 is compared against, so a wrong one would misreport the library |
 | `test_parity_with_nmd.py` | 455 | every index's score against `ngram_movers_distance` recomputed from the strings, over 2000 words of `words_en.txt` |
 
 ## Things worth knowing

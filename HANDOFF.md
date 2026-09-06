@@ -8,6 +8,43 @@ tree as of `cbde8e7`. Everything in `docs/bow-plan.md` parts 3-8 (segment mover'
 the hyperparameter search, idf on both `WordSet` and V7, the all-metrics benchmark) landed
 after that and is **not** summarized here yet.
 
+## Session 2026-09-06 (later): V7 against BM25 / tf-idf / edit distance, 17 tasks
+
+`experiments/search_benchmark.py` is the answer to "is this useful for text search". Tune/test
+halves per task, every system tuned on tune and reported on test, `top_k=50`, V7's tie rules
+applied to all. Written up as `docs/bow-plan.md` **Part 10**; tables in
+`experiments/results/search_benchmark_summary.md` (regenerate with `--report`).
+
+**Three regimes.** Short strings (typo ×4, norvig): V7 wins by +0.07 to +0.28 MAP over the best
+of char-BM25 / tf-idf / Damerau-Levenshtein, at 1-7 ms/query, position term on. Records
+(10 Magellan tasks): within ±0.02 of the best baseline on 9, −0.057 on ermagellan, never
+clearly ahead, 5-10x slower. Documents (scifact, nfcorpus): behind BM25 (nDCG@10 0.650 vs
+0.679), and only close with `normalize=False`, `n=(4,)`; the default scores 0.029.
+
+**Position helps on short strings (+0.09 typo_brutal) and is noise (±0.02) elsewhere.**
+**As a reranker / RRF partner / tuned interpolant on top of BM25 it never adds more than
++0.005 (one query)** -- rerank of a top-50 with recall 1.0 is just the reranker; tuned λ sits
+at the endpoints. The weak-form "at least a tie-breaker" hypothesis is measured and false for
+this score.
+
+**What V7 lacks vs cosine / BM25 on records is the numerator, not position** (ermagellan
+decomposition, Part 10): `min(c_q, c_d)` instead of the product `c_q·c_d` costs −0.036, L1-geo
+instead of L2 idf-weighted normalization −0.01 to −0.04, per-n averaging vs pooling ≈ noise;
+the position term is +0.008. `min` is what makes the score a transport quantity, so this is
+structural.
+
+⚠ **Two protocol lessons.** (1) Textbook BM25 (idf¹) was an under-tuned baseline; tf-idf
+cosine beating it exposed that the dot product carries idf². With `idf^{1,2,3}` in the grid
+char-BM25 gains up to +0.055 on ermagellan and V7 goes from "ahead of BM25 by 0.016" to
+"behind by 0.054". Baselines need the same tuning budget as the system under test. (2) On
+1 500-char documents `n=2` costs 550 ms/query for nDCG 0.30 — excluded from the document
+tier (`V7_N_DOC`) rather than spend 8 hours on it.
+
+Timing caveat: all ms/query in Part 10 were measured with 2-3 benchmark processes sharing the
+laptop; ratios on a task hold, absolute values do not. `.scratch/probe_ermagellan_gap.py`,
+`probe_bm25_vs_tfidf.py`, `probe_scifact.py` produced the decomposition numbers; they are
+transcribed into Part 10 because `.scratch/` is gitignored.
+
 ## Session 2026-09-06: index parameter search
 
 **V7 gained two lookup knobs and flipped one default.** `position_weight` (how much of the
@@ -453,7 +490,7 @@ Conda env named after the repo folder:
 
 ```bash
 "C:/Users/user/anaconda3/envs/ngram-movers-distance/python.exe" -m pytest -q
-# 992 passed, 1 xfailed (2026-09-05)
+# 1102 passed, 1 xfailed (2026-09-06)
 ```
 
 Installed and used: `numpy` 2.2.4, `scipy` 1.15.2, `pyroaring`, `regex`. `numba` 0.61.2 is

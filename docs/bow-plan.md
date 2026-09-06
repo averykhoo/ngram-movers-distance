@@ -918,3 +918,213 @@ tasks, and 255 of 270 on ermagellan (MAP 0.3018 against 0.9039).
 - The easy typo tasks are near saturation and rank poorly as discriminators: their
   top ten configurations span 0.9646-0.9566 (0.8% relative), against 0.4129-0.3579
   (13%) on `typo_brutal`. Prefer `typo_brutal` when comparing close candidates.
+
+## Part 10 — V7 against the systems anyone would use instead
+
+Parts 5-9 compared V7 with itself and with pairwise scorers. None of them put it next to
+what a practitioner would reach for: BM25 over the *same character n-grams* (which is what
+Elasticsearch's `ngram` tokenizer is), tf-idf cosine over them, token BM25 for documents, and
+brute-force Damerau-Levenshtein for typos. Part 10 is that comparison, on 17 tasks, under one
+protocol, with the position term ablated and V7 also tried as a reranker of, fusion with, and
+interpolant into the BM25 list. Code: `experiments/search_benchmark.py`; every number is in
+`experiments/results/search_benchmark_<task>.csv`, the tables in
+`experiments/results/search_benchmark_summary.md`. All measured 2026-09-06.
+
+### Protocol
+
+- Each task's queries are split in half by seed (at most 300 per task). **Every system picks
+  its configuration on the tune half by MAP and is reported on the test half.** Per-task tuning
+  is deliberate — typo correction and entity search are different jobs — and symmetric: BM25
+  gets `n`, `k1`, `b` and (see below) an idf exponent swept the same way V7 gets its knobs.
+  The untuned V7 default is reported alongside, so the cost of not tuning is visible.
+- Ranked lists cut at `top_k=50`, alphabetical tie-break, zero-score documents never returned:
+  the V7 rules, applied to every system.
+- Grids. V7: `n` from a tier by mean document length (`(1,2),(2,),(2,3),(2,4),(1,2,3)` for
+  short strings; `(2,),(3,),(2,3),(2,4),(3,4)` above 60 chars; `(3,),(4,),(3,4)` above 600 —
+  see the scifact caveat), `idf ∈ {0,1,2,3}`, `dim ∈ {1,2}`, `normalize`, `position_weight ∈
+  {0,0.5,1}`, `denominator`. `bm25_char`: six n-lists × `k1 ∈ {0.5,1.2,2}` × `b ∈
+  {0.3,0.75,1}` × `idf^{1,2,3}`. `tfidf_char`: log-tf, Lucene idf, L2, six n-lists.
+  `bm25_word`: textbook, `k1 × b`. Damerau-Levenshtein: band 3, typo tasks only.
+- Combinations: `X>Y` reranks X's top 50 by Y (Y's ties fall back to X's order);
+  `rrf(v7,X)` is reciprocal-rank fusion at k=60; `mix(X,v7)` is `(1-λ)·X/max + λ·v7/max`
+  with λ ∈ {0.1,0.25,0.5,0.75,0.9} tuned like everything else.
+- ⚠ Timing: every ms/query below was measured with two or three benchmark processes sharing
+  the laptop. Ratios between systems on the same task are meaningful; absolute values are not.
+
+### The tasks
+
+| regime | task | corpus | mean chars | test queries |
+|---|---|---|---|---|
+| short strings | `typo`, `typo_ms`, `typo_hard`, `typo_brutal` | Part 9's four | 8-9 | 119-125 |
+| | `norvig` | 41 433 words; real misspellings from Norvig's `spell-testset1.txt` | 8 | 150 |
+| records | `abtbuy`, `ermagellan` | Part 9's two | 53, 138 | 50, 103 |
+| | `amazon_google`, `walmart_amazon`, `dirty_walmart_amazon`, `dblp_acm`, `dirty_dblp_acm`, `dblp_scholar`, `fodors_zagats`, `itunes_amazon` | the rest of Magellan in ditto's format, 238-10 693 records | 111-310 | 22-150 |
+| documents | `scifact`, `nfcorpus` | BEIR title+abstract, 5 183 / 3 593 docs, graded qrels | ~1 500 | 150 |
+
+The document tasks are the negative boundary: BM25 is the published baseline there
+(BEIR reports token-BM25 nDCG@10 0.665 on SciFact, 0.325 on NFCorpus), and a character
+n-gram matcher is expected to lose. They are here so that "should this be used for search" has
+a number attached at the far end.
+
+### Results (test MAP; nDCG@10 and recall@50 in the summary)
+
+| task | V7 | best baseline | Δ | position (pw1 − pw0) | best combination | Δ vs best single | V7 ms | baseline ms |
+|---|---:|---|---:|---:|---|---:|---:|---:|
+| typo | 0.966 | bm25_char 0.873 | **+0.092** | +0.011 | mix(bm25,v7) 0.955 | −0.011 | 1 | 0.5 |
+| typo_ms | 0.953 | bm25_char 0.828 | **+0.125** | +0.008 | bm25>v7 0.954 | +0.002 | 2 | 0.7 |
+| typo_hard | 0.856 | bm25_char 0.722 | **+0.135** | +0.001 | mix(tfidf,v7) 0.852 | −0.004 | 7 | 1.2 |
+| typo_brutal | 0.417 | bm25_char 0.138 | **+0.278** | **+0.091** | mix(bm25,v7) 0.393 | −0.024 | 3 | 2.5 |
+| norvig | 0.870 | bm25_char 0.797 | **+0.073** | +0.022 | mix(bm25,v7) 0.872 | +0.001 | 6 | 1.4 |
+| abtbuy | 0.923 | tfidf_char 0.904 | +0.019 | **−0.033** | bm25>v7 0.923 | 0 | 4 | 0.9 |
+| ermagellan | 0.878 | tfidf_char 0.935 | **−0.057** | +0.008 | mix(bm25,v7) 0.936 | +0.001 | 75 | 9.4 |
+| dblp_acm | 0.993 | bm25_char 1.000 | −0.007 | 0 | v7>bm25 1.000 | 0 | 49 | 7.7 |
+| dblp_scholar | 0.765 | tfidf_char 0.780 | −0.014 | −0.003 | mix(tfidf,v7) 0.781 | +0.002 | 52 | 7.6 |
+| amazon_google | 0.865 | tfidf_char 0.872 | −0.007 | +0.019 | mix(tfidf,v7) 0.877 | +0.005 | 17 | 7.3 |
+| walmart_amazon | 0.898 | bm25_char 0.886 | +0.013 | +0.011 | mix(tfidf,v7) 0.903 | +0.004 | 32 | 7.9 |
+| fodors_zagats | 1.000 | 1.000 | 0 | 0 | 1.000 | 0 | 15 | 2.8 |
+| itunes_amazon | 0.981 | tfidf_char 0.981 | 0 | 0 | 0.981 | 0 | 67 | 3.3 |
+| dirty_dblp_acm | 0.993 | bm25_word 1.000 | −0.007 | 0 | rrf(v7,tfidf) 0.997 | −0.003 | 53 | 1.0 |
+| dirty_walmart_amazon | 0.872 | bm25_char 0.879 | −0.007 | +0.014 | v7>bm25 0.879 | 0 | 72 | 16.0 |
+| scifact | 0.618 | bm25_char 0.637 | −0.019 | +0.018 | v7>bm25 0.638 | +0.001 | 20 | 23.8 |
+| nfcorpus | 0.112 | bm25_char 0.121 | −0.009 | +0.003 | rrf(v7,tfidf) 0.122 | +0.001 | 3 | 1.6 |
+
+The noise floor: with 150 test queries, one query moving between rank 1 and 2 is 0.003 MAP;
+on `abtbuy` (50 queries) it is 0.010. Anything inside ±0.01 above is one or two queries.
+
+**Three regimes, and the answer differs in each.**
+
+1. **Short strings: V7 is the best system by a wide margin.** +0.07 to +0.28 MAP over the
+   best baseline on all five tasks, at 1-7 ms/query; it also beats brute-force
+   Damerau-Levenshtein (0.921 / 0.943 / 0.805 / 0.017 / 0.779 on the five) at 200-1400 ms.
+   That includes `norvig`'s real human misspellings, not just `corrupt`'s random edits.
+   Token BM25 scores 0 everywhere here (a misspelled word is not a token in the index); char
+   BM25 at its best is 0.87 / 0.83 / 0.72 / 0.14 / 0.80.
+2. **Records: a wash, at 5-10x the cost.** V7 is within ±0.02 of the best baseline on 9 of
+   10 tasks and never clearly ahead (+0.019 on abtbuy is two queries of 50); it loses **0.057
+   on ermagellan**, the one long-record task where the gap is real (0.878 vs 0.935; nDCG@10
+   0.906 vs 0.949). Four tasks are saturated (≥ 0.98 for everything) and say nothing.
+3. **Documents: V7 loses narrowly and should not be used.** nDCG@10 0.650 vs 0.679
+   (bm25_char) / 0.665 (bm25_word) on scifact, 0.273 vs 0.298 / 0.294 on nfcorpus. The
+   token BM25 reproduces BEIR's 0.665 on scifact exactly and lands under its 0.325 on
+   nfcorpus (no stemming, no stopwords, our 150-query half). V7 only gets this close with
+   `normalize=False` (containment rather than similarity — a 10-word query against a 250-word
+   abstract) and `n=(4,)`; the library default scores **0.029** here at 500 ms/query.
+
+### Does positional information help? — yes on short strings, noise elsewhere
+
+`position_weight=0` is order-blind dice over n-gram multisets, so `v7_pw1.0 − v7_pw0.0`, each
+tuned over everything else, is the value of the mover's-distance term per task. It is
+**+0.091 on typo_brutal**, +0.022 on norvig, +0.011 / +0.008 / +0.001 on the other typo
+tasks; on the records +0.011 to +0.019 on amazon_google, walmart_amazon and
+dirty_walmart_amazon, +0.008 on ermagellan, zero on the four saturated tasks, **and never below
+−0.003 except abtbuy (−0.033, three queries of 50)**; +0.018 / +0.003 on the documents. Position
+is the whole signal when the error is a transposition inside a short string; on a 150-character
+record it is one more slightly-noisy feature, worth about the noise floor. Part 9's "position is
+harmful on products" came from abtbuy alone and does not generalize — but neither does it help
+enough on records to matter.
+
+### Does it help as a tie-breaker, reranker or fusion partner? — no
+
+This was the weak-form hypothesis: order information "should not make me worse, at least for
+breaking ties or reranking the top few". Measured three ways against the best baseline on each
+task:
+
+- **Reranking the top 50 is just the reranker.** On all twelve record and document tasks
+  `bm25_char>v7` equals V7 alone and `v7>bm25_char` equals BM25 alone, to within 0.003:
+  recall@50 is 1.000 for both on every record task, so the first stage admits everything and
+  only the second stage's ordering remains. On the short-string tasks the first stage *does*
+  bound recall (BM25 R@50 0.456 on typo_brutal) and reranking by V7 gets 0.313 against V7's
+  own 0.417; the other way round, V7's better candidate set lifts BM25 by 0.01-0.06 but never
+  to V7's level.
+- **RRF is never best.** At most +0.003 over its better input (nfcorpus), usually between the
+  two, three times below both (dblp_scholar, walmart_amazon, dirty_walmart_amazon).
+- **Tuned interpolation (`mix`) recovers the better input at best.** The tuned λ sits at the
+  endpoints — 0.9 (nearly all V7) on every short-string task, 0.1 on most record and
+  document tasks. The mixture beats the best single system on a task by at most **+0.005**
+  (amazon_google, walmart_amazon: one query), and is *below* its own better input by
+  0.01-0.03 on the five short-string tasks and on abtbuy, itunes_amazon and walmart_amazon,
+  where the weaker system's normalized score leaks in.
+
+So on the tasks where BM25 wins, V7's ordering information is not complementary to it: the
+queries BM25 gets wrong are not the ones V7 gets right. ⚠ This is a result about *this
+score*, not about order in general: V7's position term is a coarse per-n-gram displacement
+inside a Dice frame, and the next section says the Dice frame is where the loss is.
+
+### If BM25 does well, what is V7 missing? — the numerator, not the position term
+
+Answered on ermagellan, the one record task with a real gap, in `.scratch/probe_ermagellan_gap.py`
+(2026-09-06, numbers transcribed here because that directory is gitignored). Starting from tf-idf
+cosine at `n=(2,3)` — log-tf, idf¹, L2 — test MAP **0.935**, and replacing one piece at a time
+with V7's choice:
+
+| change | test MAP | cost |
+|---|---:|---:|
+| tf-idf cosine, log-tf, idf¹, L2 (the winning baseline) | 0.935 | — |
+| … idf² instead of idf¹ | 0.939 | +0.004 |
+| … L1 totals under a geometric mean instead of L2 (V7's `geo` denominator) | 0.896 (idf¹), 0.930 (idf²) | −0.039 / −0.009 |
+| **`Σ idf³·min(c_q, c_d)` instead of `Σ idf²·c_q·c_d`** — V7's numerator, pooled over n, geo | 0.899 | **−0.036** |
+| … the same, averaged per n instead of pooled (V7's `_similarity_vectors` does this) | 0.869 (tune 0.914) | −0.030, noisy |
+| V7 proper at `pw=0`, `n=(2,3)`, idf 3, geo | 0.875 | ≈ the row above |
+| V7 proper at `pw=1` (position term on) | 0.883 | +0.008 |
+
+Three things, in order of size:
+
+1. **The `min` numerator.** V7 scores the *transported mass* — `min(c_q, c_d)` per n-gram,
+   because that is what a mover's distance moves — where cosine and BM25 score the *product*
+   `c_q · c_d` (BM25: `tf` saturated). The product rewards a document for containing a rare
+   n-gram *many* times; `min` caps that at the query's count, which is almost always 1. On
+   records with repeated fields (brand in title and description) the product is the better
+   evidence. This is −0.036 by itself and is structural: it is what makes the score an EMD.
+2. **L2, idf-weighted length normalization.** Cosine divides by the L2 norm of the
+   idf-weighted counts, so a long tail of common n-grams costs a document little; V7's `geo`
+   divides by `sqrt(|q|₁·|d|₁)` on raw counts. Worth 0.01-0.04 depending on the idf exponent
+   (Part 9 found `normalize` and `idf` substitute for each other; this is why).
+3. **Per-n averaging.** V7 computes a similarity per n and averages; the baselines pool all
+   n-grams into one vector. The tune/test disagreement (−0.030 test, +0.010 tune) says this one
+   is within noise on 103 queries.
+
+The position term is **+0.008** on this task — it is not where the gap is, and turning it off
+does not close the gap either.
+
+⚠ **The BM25 baseline was under-tuned until 2026-09-06, and that would have flattered V7.**
+Textbook BM25 uses idf¹; the observation that tf-idf *cosine* beat it on every record task was
+explained by the cosine dot product carrying idf on both sides — idf². Adding `idf_exp ∈ {1,2,3}`
+to the BM25 grid (`.scratch/probe_bm25_vs_tfidf.py`, `n=(2,3)`, best of k1/b at each exponent):
+ermagellan 0.862 → 0.903 → **0.917**, abtbuy 0.872 → 0.896 → **0.932**. The selected `bm25_char` uses idf³ on abtbuy,
+ermagellan and itunes, idf² on the walmart and dirty tasks, idf¹ on typo and documents. This is
+the same finding as Part 6's "idf is worth 5-15x what the hyperparameters are worth", now on
+the baseline side; a comparison against textbook BM25 alone would have reported V7 *ahead* of
+BM25 on ermagellan by 0.016 instead of behind by 0.054 — it was the cosine baseline that exposed it. **V7's own idf exponent is not grid-limited**:
+past the grid edge on ermagellan it goes 3 → 0.883, 4 → 0.895, 5 → 0.871, 6 → 0.851, 8 → 0.768.
+
+### Should it be used for text search?
+
+- **Fuzzy lookup of short strings** (spelling correction, dictionary / name / code lookup,
+  anything under ~20 characters where the error model is edits): **yes, and it is the best
+  thing measured here**, with the position term on. Nothing in the baseline set comes close,
+  and it is 100x faster than the edit-distance scan that would be the honest alternative.
+- **Record / entity search** (product titles, citations, 50-300 characters): **not on
+  quality grounds.** It matches char-n-gram BM25 or tf-idf cosine to within noise on nine of
+  ten tasks and loses on the tenth, at 5-10x the query cost, and combining it with BM25 buys
+  nothing. Use it only if one index has to serve both regimes.
+- **Documents**: no. It is behind BM25 with a containment normalization and behind
+  everything at its defaults.
+
+### Caveats
+
+- ⚠ **`n=2` was excluded from the V7 grid on the document tasks.** With 1 500-character
+  documents every bigram is in every document; on scifact `n=(2,)` measured nDCG@10 0.296 at
+  550 ms/query against 0.523 at 90 ms for `(3,4)` in the preview (before the full grid, so not
+  the numbers above), and the full grid with it would have taken ~8 hours. The document tier
+  is `(3,),(4,),(3,4)`; both tasks chose `(4,)`.
+- The four saturated Magellan tasks (`dblp_acm`, `dirty_dblp_acm`, `fodors_zagats`,
+  `itunes_amazon`) distinguish nothing at ≥ 0.98 and are kept only for completeness.
+- `dblp_scholar`'s V7 timing rows predate the baseline refresh (its V7 rows were kept and only
+  the baselines re-run, via `--baselines`), so its ms/query column mixes two runs.
+- Selected configurations are per task and at most 150 tune queries chose them; the
+  `selected configurations` table in the summary shows how unstable `n` is across the record
+  tasks (`(2,)`, `(3,)`, `(2,3)`, `(2,4)`, `(3,4)` all appear). A single "records" setting
+  would score lower than the per-task numbers above.
+- The interpolation normalizes each system by its per-query max; a z-score or min-max over
+  the top 50 might behave differently at λ near 0.5. Not tried; the λ=0.1/0.9 endpoints
+  winning everywhere says the two scores are not complementary at any scale.

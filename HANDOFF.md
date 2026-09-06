@@ -658,11 +658,41 @@ get fixed.
     all 432, and their per-task bests differ wherever the optimum used unigrams. Do not mix rows
     between the two.
 
-22. **`idf_exponent`'s optimum on product matching is still at the grid edge.** abtbuy peaks at
+22. **Closed 2026-09-06: `idf_exponent` is not grid-limited.** Past the edge on ermagellan
+    (`n=(2,3)`, geo, pw=1): 3 → 0.883, 4 → 0.895, 5 → 0.871, 6 → 0.851, 8 → 0.768 test MAP.
+    It peaks at 3-4. The original note, for the record: abtbuy peaks at
     the largest value swept (3.0 → 0.9500, 4.0 → 0.9467 so it may just have turned over), and
     `docs/bow-plan.md` part 6 saw train AP still climbing at p=15. Part 6 also names three
     guards that were never implemented and would matter at high exponents: an idf floor,
     punctuation normalization, and fitting df on an external corpus.
+
+23. **Decide what the library claims to be for.** Part 10 says: best-in-set for fuzzy lookup
+    of short strings, a wash at 5-10x the cost on records, behind BM25 on documents. The README
+    still pitches general text search. Either narrow the pitch or take on item 24; not doing
+    either leaves the benchmark contradicting the front page.
+
+24. **The record-task gap is the `min` numerator, and it is structural.** ermagellan
+    decomposition (Part 10): `min(c_q, c_d)` vs the product costs −0.036, L1-geo vs L2
+    idf-weighted normalization −0.01..−0.04, position +0.008. A V7 variant scoring a product
+    (or a saturated tf) with an L2 norm would no longer be a transport distance — it would be
+    tf-idf cosine with a position penalty. Worth one probe to see whether *that* beats cosine
+    on records before deciding it is out of scope; if it does not, close 23 by narrowing.
+
+25. **A single "records" configuration has not been chosen.** The selected `n` swings across
+    `(2,)`, `(3,)`, `(2,3)`, `(2,4)`, `(3,4)` on the ten Magellan tasks, on ≤150 tune queries
+    each. If the library ships a records preset it needs to be picked on the pooled tune halves
+    and re-measured, not lifted from one task.
+
+26. **`mix` normalizes by per-query max**; a z-score or top-50 min-max might behave differently
+    at λ ≈ 0.5. Low priority — λ chose the endpoints on every task — but it is the one untried
+    knob in the "position as tie-breaker" test.
+
+27. **Document tasks are measured without stemming/stopwords and on 150-query halves**, so the
+    `bm25_word` numbers are a rough BEIR reproduction (0.665 on scifact exact, 0.294 vs 0.325
+    on nfcorpus). Fine for a negative boundary; do not cite them as BEIR-comparable.
+
+28. **Re-measure Part 10's ms/query on an idle machine** before quoting any of them. All were
+    taken with 2-3 benchmark processes sharing the laptop.
 
 ## Things worth knowing before optimizing further
 

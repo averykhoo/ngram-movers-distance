@@ -262,6 +262,12 @@ class ApproxWordListV7:
         # the vocabulary size and hence every idf, not just the ones it touched
         self._gram_weights: List[Dict[str, float]] = [dict() for _ in self._n_list]
         self._weighted_total_by_word: List[np.ndarray] = [np.empty(0, dtype=np.float64) for _ in self._n_list]
+        # sqrt of whichever per-word total is in force, precomputed for the `geo` denominator:
+        # sqrt(total * query_total) == sqrt(total) * sqrt(query_total), so the per-lookup work
+        # drops from a vocabulary-sized sqrt to an array-scalar multiply. ⚠ that identity is not
+        # exact in floating point (~2.7e-16 relative), see `_denominator`
+        self._sqrt_total_by_word: List[np.ndarray] = [np.empty(0, dtype=np.float64)
+                                                      for _ in self._n_list]
 
     # ------------------------------------------------------------------ container protocol
 
@@ -428,6 +434,8 @@ class ApproxWordListV7:
         ]
         if self._weighted:
             self._rebuild_weights(vocab_size)
+        totals = self._weighted_total_by_word if self._weighted else self._num_grams_by_word
+        self._sqrt_total_by_word = [np.sqrt(total) for total in totals]
         self._frozen = True
 
     def _rebuild_weights(self, vocab_size: int) -> None:
@@ -700,9 +708,16 @@ class ApproxWordListV7:
         numerator is zero anyway and the exact divisor is irrelevant -- we only need to
         avoid a 0/0 nan leaking into the scores
         """
-        totals = self._weighted_total_by_word[n_idx] if self._weighted else self._num_grams_by_word[n_idx]
         if denominator == 'geo':
-            return np.maximum(2.0 * np.sqrt(totals * query_total), 1.0)
+            # sqrt(total * query_total) factored as sqrt(total) * sqrt(query_total), with the
+            # per-word half precomputed in `_freeze`. at a 300k vocabulary this turns a
+            # vocabulary-sized sqrt into an array-scalar multiply.
+            #
+            # ⚠ NOT bit-identical to the unfactored form: the two differ by ~2.7e-16 relative,
+            # so scores can move in the last ulp and exact ties can reorder. measured 2026-09-06
+            # the retrieval effect is nil -- see the note in HANDOFF; accepted deliberately
+            return np.maximum(2.0 * self._sqrt_total_by_word[n_idx] * math.sqrt(query_total), 1.0)
+        totals = self._weighted_total_by_word[n_idx] if self._weighted else self._num_grams_by_word[n_idx]
         return np.maximum(totals + query_total, 1.0)
 
     def lookup(self,

@@ -228,6 +228,85 @@ class TestPresortedLocations:
             assert fired > 0
 
 
+class TestBatchedEmd:
+    """
+    `_emd_1d_batch` must reproduce `emd_1d_dp` row for row, and the threshold must not matter
+
+    the batched kernel is a performance change only. two things could go wrong silently: the
+    recurrence could be transcribed wrongly (caught by comparing against emd_1d_dp), or the two
+    sides of `_EMD_BATCH_MIN_ROWS` could disagree, so that scores depended on how many documents
+    happened to share an occurrence count (caught by forcing the threshold both ways).
+    """
+
+    @pytest.mark.parametrize('shape', [(1, 1), (2, 2), (3, 3), (2, 5), (5, 2),
+                                       (4, 7), (7, 4), (1, 9), (9, 1), (6, 6), (3, 11)])
+    def test_matches_emd_1d_dp_row_for_row(self, shape):
+        import numpy as np
+
+        from nmd.emd_1d import emd_1d_dp
+        from nmd.nmd_index_v7 import _emd_1d_batch
+
+        rng = np.random.default_rng(0)
+        len_x, len_y = shape
+        x = np.sort(rng.random((40, len_x)), axis=1)
+        y = np.sort(rng.random((40, len_y)), axis=1)
+        got = _emd_1d_batch(x, y)
+        for row in range(x.shape[0]):
+            expected = emd_1d_dp(list(x[row]), list(y[row]))
+            assert got[row] == pytest.approx(expected, abs=1e-12)
+
+    def test_unmatched_penalty_is_charged(self):
+        """
+        pins the `+ 1.0` on the leave-x transition, which nothing else can observe
+
+        the index only ever passes positions in [0, 1], and there matching always beats
+        dropping a point -- so removing that penalty is invisible on every realistic input
+        (verified 2026-09-06: identical over 14 shapes x 30 random rows). spread the points out
+        and it becomes visible, which is the only way to keep the term honest.
+        """
+        import numpy as np
+
+        from nmd.emd_1d import emd_1d_dp
+        from nmd.nmd_index_v7 import _emd_1d_batch
+
+        x = np.array([[0.0, 10.0], [0.0, 5.0]])
+        y = np.array([[0.0, 0.1, 0.2], [0.0, 0.1, 0.2]])
+        got = _emd_1d_batch(x, y)
+        for row in range(x.shape[0]):
+            assert got[row] == pytest.approx(emd_1d_dp(list(x[row]), list(y[row])), abs=1e-12)
+        # dropping the penalty would score these 2.0 instead of 3.0
+        assert got[0] == pytest.approx(3.0, abs=1e-12)
+
+    def test_handles_identical_and_disjoint_point_sets(self):
+        import numpy as np
+
+        from nmd.emd_1d import emd_1d_dp
+        from nmd.nmd_index_v7 import _emd_1d_batch
+
+        x = np.array([[0.0, 0.5, 1.0], [0.0, 0.0, 0.0]])
+        y = np.array([[0.0, 0.5, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]])
+        got = _emd_1d_batch(x, y)
+        for row in range(x.shape[0]):
+            assert got[row] == pytest.approx(emd_1d_dp(list(x[row]), list(y[row])), abs=1e-12)
+
+    @pytest.mark.parametrize('query', ['abab', 'banana', 'mississippi', 'aaaa', 'cocoa'])
+    @pytest.mark.parametrize('normalize', [False, True])
+    def test_threshold_does_not_change_scores(self, query, normalize, monkeypatch):
+        """forcing every group through the batched path, or none of it, must agree exactly"""
+        import nmd.nmd_index_v7 as module
+
+        words = sorted(set(REPEAT_WORDS + [w * 3 for w in REPEAT_WORDS]))
+        monkeypatch.setattr(module, '_EMD_BATCH_MIN_ROWS', 10 ** 9)  # never batch
+        scalar = module.ApproxWordListV7(n=(2,)).add_words(words).lookup(
+            query, top_k=len(words), normalize=normalize)
+        monkeypatch.setattr(module, '_EMD_BATCH_MIN_ROWS', 0)  # always batch
+        batched = module.ApproxWordListV7(n=(2,)).add_words(words).lookup(
+            query, top_k=len(words), normalize=normalize)
+        assert [word for word, _ in scalar] == [word for word, _ in batched]
+        for (_, a), (_, b) in zip(scalar, batched):
+            assert a == pytest.approx(b, abs=1e-12)
+
+
 class TestDefaults:
     """
     the shipped defaults, pinned

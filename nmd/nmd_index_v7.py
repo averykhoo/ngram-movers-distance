@@ -78,6 +78,63 @@ def num_n_grams(len_word: int, n: int) -> int:
     return len_word
 
 
+# smallest posting group worth handing to `_emd_1d_batch`. the batched dp costs m*n numpy
+# operations regardless of how many rows it serves, while the scalar dp costs m*n*rows python
+# ones, so the break-even is a row count and does NOT depend on the dp shape.
+#
+# tuned 2026-09-06 on ermagellan (ms per query, lower better):
+#
+#     threshold   never    256    128     64     48     32     16   always
+#     n=(2, 4)      164    162    144    142    127    124    120      162
+#     n=(2, 3)      258    204    166    146    143    137    138      186
+#     n=(1,)       1625   1748   1587    938    880    865    880     1947
+#
+# ⚠ batching unconditionally is NOT the win -- it is a wash at n=(2, 4) and a loss at n=(1,),
+# where it is worse (1947 ms) than never batching at all (1625 ms) and 2.25x worse than this
+# threshold,
+# because within a single query n-gram the postings fragment by occurrence count into groups
+# far smaller than the workload-wide average suggests. the threshold is what makes it pay.
+_EMD_BATCH_MIN_ROWS = 32
+
+
+def _emd_1d_batch(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """
+    `emd_1d_dp` for a whole batch of equally-shaped point sets at once
+
+    `x` is (batch, m) and `y` is (batch, n), each row ascending; returns (batch,) distances that
+    match `emd_1d_dp(x[b], y[b])` exactly. this is the same recurrence, not an approximation of
+    it: `dp[i][j] = min(|x_i - y_j| + dp[i-1][j-1], 1 + dp[i-1][j], 1 + dp[i][j-1])`.
+
+    only the batch axis is vectorised. `j` cannot be, because `dp[i][j]` depends on `dp[i][j-1]`
+    within the same row -- so this is m*n numpy operations over `batch` elements, in place of
+    m*n*batch python ones. that trade only pays above ~15 rows, which is why the caller groups
+    postings by length first: measured 2026-09-06 on ermagellan the groups average 455 rows at
+    n=(2, 4) and 75 at n=(1,).
+
+    the dp fallback exists at all because V7's vectorised path only covers n-grams occurring
+    exactly once in a document. that is ~98% of postings for 8-character words and only 25.5%
+    for 138-character ones, which is why this matters on long documents and nowhere else.
+    """
+    batch, len_x = x.shape
+    len_y = y.shape[1]
+    if len_x > len_y:  # emd is symmetric; keep the outer loop over the shorter side
+        x, y = y, x
+        len_x, len_y = len_y, len_x
+
+    # dp[0][j] == j, the cost of leaving j points of y unmatched
+    prev = np.tile(np.arange(len_y + 1, dtype=np.float64), (batch, 1))
+    curr = np.empty_like(prev)
+    for i in range(1, len_x + 1):
+        curr[:, 0] = float(i)  # dp[i][0] == i
+        x_i = x[:, i - 1]
+        for j in range(1, len_y + 1):
+            match = np.abs(x_i - y[:, j - 1]) + prev[:, j - 1]
+            np.minimum(match, prev[:, j] + 1.0, out=match)
+            np.minimum(match, curr[:, j - 1] + 1.0, out=curr[:, j])
+        prev, curr = curr, prev
+    return prev[:, len_y]
+
+
 def _generalized_mean(parts: Sequence[np.ndarray], dim: Union[int, float]) -> np.ndarray:
     """power mean over a list of same-shaped arrays; `dim == 1` is the plain arithmetic mean"""
     if len(parts) == 1:
@@ -531,30 +588,48 @@ class ApproxWordListV7:
                         np.minimum(min_dist, 2.0, out=min_dist)
                         score[single_idxs] += weight * (2.0 - position_weight * min_dist)
 
-                    # both sides repeat: fall back to the general dp.
-                    # emd splits into the unavoidable unmatched mass abs(c1 - c2) plus the
-                    # displacement of the mass that did match, and c1 + c2 - abs(c1 - c2) is
-                    # exactly 2 * min(c1, c2), so this is the same form as the branches above
-                    for other_word_index, other_locs in multi.get(n_gram, ()):
-                        other_count = len(other_locs)
-                        if other_count == n_locations:
-                            # equal masses: nothing can go unmatched, and in one dimension the
-                            # optimal transport is then the monotone (sorted) matching, so the
-                            # displacement is just the sum of paired differences. this needs both
-                            # lists ascending, which holds by construction -- `add_word` and the
-                            # query loop above both append locations in increasing index order.
-                            # `tests/test_index_v7_knobs.py::TestPresortedLocations` pins that,
-                            # because if it ever stopped holding this would silently return wrong
-                            # distances rather than fail. measured 2026-09-06 on ermagellan it
-                            # skips 46.2% of dp calls at n=(2,4) and 6.7% at n=(1,), for 1.21x
-                            # and 1.19x on the emd workload respectively -- the unigram gain is
-                            # larger than its call share because equal-mass pairs are the big ones
-                            displacement = sum(abs(a - b) for a, b in zip(locations, other_locs))
-                        else:
-                            displacement = (emd_1d_dp(locations, other_locs)
-                                            - abs(n_locations - other_count))
-                        score[other_word_index] += weight * (2.0 * min(n_locations, other_count)
-                                                             - position_weight * displacement)
+                    # both sides repeat. emd splits into the unavoidable unmatched mass
+                    # abs(c1 - c2) plus the displacement of the mass that did match, and
+                    # c1 + c2 - abs(c1 - c2) is exactly 2 * min(c1, c2), so this is the same
+                    # form as the branches above.
+                    #
+                    # postings are grouped by occurrence count so each group shares a dp shape
+                    # and can be solved as one batch. both branches below need every location
+                    # list ascending, which holds by construction -- `add_word` and the query
+                    # loop above append in increasing index order -- and is pinned by
+                    # `tests/test_index_v7_knobs.py::TestPresortedLocations`, because losing it
+                    # would return silently wrong distances rather than raise
+                    entries = multi.get(n_gram)
+                    if entries:
+                        by_count: Dict[int, List[Tuple[int, Tuple[float, ...]]]] = dict()
+                        for other_word_index, other_locs in entries:
+                            by_count.setdefault(len(other_locs), []).append(
+                                (other_word_index, other_locs))
+                        query_locs = np.asarray(locations, dtype=np.float64)
+                        for other_count, group in by_count.items():
+                            group_idxs = np.fromiter((wi for wi, _ in group),
+                                                     dtype=np.int32, count=len(group))
+                            other = np.array([locs for _, locs in group], dtype=np.float64)
+                            if other_count == n_locations:
+                                # equal masses: nothing goes unmatched, so in one dimension the
+                                # optimal transport is the monotone (sorted) matching and the
+                                # displacement is just the sum of paired differences -- no dp
+                                displacement = np.abs(other - query_locs).sum(axis=1)
+                            elif len(group) >= _EMD_BATCH_MIN_ROWS:
+                                displacement = _emd_1d_batch(
+                                    np.broadcast_to(query_locs,
+                                                    (len(group), n_locations)), other)
+                                displacement = displacement - abs(n_locations - other_count)
+                            else:
+                                # too few rows to amortise numpy's per-operation overhead; the
+                                # batched dp costs m*n array ops either way, so a small group
+                                # pays that overhead without spreading it over anything
+                                displacement = np.fromiter(
+                                    (emd_1d_dp(locations, locs) for _, locs in group),
+                                    dtype=np.float64, count=len(group))
+                                displacement = displacement - abs(n_locations - other_count)
+                            score[group_idxs] += weight * (2.0 * min(n_locations, other_count)
+                                                           - position_weight * displacement)
 
         if normalize:
             scores = [scores[n_idx] / self._denominator(n_idx, query_totals[n_idx], denominator)

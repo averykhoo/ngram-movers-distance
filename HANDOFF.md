@@ -127,6 +127,53 @@ on `(2,3)`/`(2,4)` reintroduces the typo regression.
 Cost would have been ~45 lines of a second kernel, two tuning constants, and a domain
 restriction (valid only for spread <= 2) that a later edit could silently break.
 
+### ⚠ Global grouping across n-grams: built, benchmarked, rejected 2026-09-06 -- do not re-derive
+
+A batch only needs matching dp *shapes*; both sides may vary row to row. So postings could be
+grouped by shape across every n-gram in a lookup rather than per n-gram. On paper this looked
+strong -- at `n=(2,4)` it cuts groups 961 -> 98, raises the mean group 53 -> 521, drops numpy
+calls 4510 -> 1970 (2.3x), and cuts rows falling to the scalar path 4902 -> 382.
+
+Measured interleaved, min-of-N (ratios are sound even though absolute times drift under load):
+
+| task | n | ratio |
+|---|---|---|
+| ermagellan | (2, 3) | 1.12x |
+| abtbuy | (2, 4) | 1.03x |
+| ermagellan | (1,) | 1.02x |
+| abtbuy | (2, 3) | 0.98x |
+| ermagellan | (2, 4) | 0.97x |
+| typo | (1, 2) | **0.91x** |
+| typo_hard | (1, 2) | **0.84x** |
+
+**The call-count projection was right and still wrong**, because it counted only half the cost.
+Per n-gram, every row of a batch shares one n-gram's query locations, so the query side is
+`np.broadcast_to(...)` -- zero-copy. Batching across n-grams gives rows *different* query
+vectors, so it must materialise `rows * m` floats. That cost scales with batch size, i.e. exactly
+where the call savings were meant to come from, and on typo workloads it is pure overhead with
+nothing to offset it. `np.repeat` over rows sorted by n-gram would soften it but not change the
+verdict: the ceiling is that 1.12x.
+
+⚠ It is also the only change in this line of work that is **not bit-identical** -- worst score
+difference 5.7e-14 with 5 ranking changes in 288 lookups, because `bincount` reorders the
+additions and scores 1e-14 apart are no longer exact ties, so V7's alphabetical tie-break stops
+applying. `lookup`'s docstring promises reproducible tie order, so this would have been a
+documented behaviour change on top of a non-win.
+
+### The pattern behind both rejections
+
+After the equal-mass shortcut and `_emd_1d_batch` landed, **the dp is no longer where the time
+goes**, so further dp micro-optimisation keeps failing to show up end to end. Both banding and
+global grouping reduce dp work by the amount predicted and neither moves the wall clock. If this
+is picked up again, re-profile first (`experiments/emd_variants_bench.py`, and cProfile on a
+lookup) rather than assuming the 78-97% figure from before those two changes still holds.
+
+⚠ Measurement note for anyone benchmarking here: a background sweep on the same machine made
+identical baselines vary 2x (`abtbuy n=(2,3)` "before" measured 7.3 ms and 14.1 ms in two runs).
+Interleave the two variants and take the **minimum**, not the median -- contention only ever adds
+time. Also instrument how often the code path under test actually runs: two apparent regressions
+(0.60x, 0.99x) turned out to be on workloads making zero batched calls.
+
 ⚠ **Pruning cannot help here.** `_similarity_vectors` computes `candidates` but pass 2 scores
 every posting regardless -- the bound is a top-k correctness mechanism, not a work-saving one.
 Restricting pass 2 to candidates is a real unexploited optimization on *short* corpora (0.9% of

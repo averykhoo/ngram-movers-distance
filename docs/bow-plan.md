@@ -816,7 +816,7 @@ edit budget is an upper bound, not the achieved distance, since operations
 overlap and cancel — the realized distance has to be measured, which is the other
 reason to rank rather than just raise the budget.
 
-### The result: two clusters that disagree on every knob
+### The result: two clusters, differing on `n`, `idf_exponent` and `dim`
 
 | task | best MAP | `n` | idf | dim | normalize | pos_w | den |
 |---|---|---|---|---|---|---|---|
@@ -856,7 +856,7 @@ that is good everywhere.
 
 **The old default is not a compromise, it is unchosen.** `n=(2,4) idf=0 dim=1
 normalize=False` ranks 334 / 161 / 99 / 94 / 98 of 432 on the five full-grid
-tasks, and 14 of 19 on ermagellan (MAP 0.3018 against 0.7989).
+tasks, and 255 of 270 on ermagellan (MAP 0.3018 against 0.9039).
 
 ### Per-knob findings
 

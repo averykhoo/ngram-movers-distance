@@ -23,7 +23,8 @@ needs no rebuild. `lookup(normalize=...)` now defaults to **True**, unlike V6 an
 script inlined a `rank = next(...)` loop that took only the first relevant item's rank.
 Results are tracked CSVs under `experiments/results/`.
 
-**The headline result: the tasks split into two clusters that disagree on every knob.**
+**The headline result: the tasks split into two clusters, differing on `n`, `idf_exponent`
+and `dim` -- but agreeing on `normalize=True`, `position_weight=1.0` and (mostly) `geo`.**
 
 | cluster | tasks | `n` | idf | dim | normalize | position_weight | denominator |
 |---|---|---|---|---|---|---|---|
@@ -51,11 +52,32 @@ elsewhere.
 tasks' rankings.** The shortlist was built from the 4-task aggregate plus per-task winners, so it
 inherited their preferences and never sampled the region ermagellan actually wanted.
 
-Best single compromise is `n=(1,2) idf=0.5 dim=2 normalize=True position_weight=1.0
-denominator='geo'` -- top of the six-task ranking, best mean rank (51.2/432) of the five-task
-one. Its worst rank is 234/432, on abtbuy. **The old default `n=(2,4) idf=0 dim=1
-normalize=False` ranks 334 / 161 / 99 / 94 / 98 of 432 across the five full-grid tasks**: not a
-compromise, just unchosen.
+Best single compromise depends on which field you rank over. Over the five-task **full** grid it
+is `n=(1,2) idf=0.5 dim=2 normalize=True position_weight=1.0 denominator='geo'` (best mean rank,
+51.2/432, worst 234/432 on abtbuy). Over the 270 unigram-free points all six share it is
+`n=(2,4) idf=1.0 dim=2 normalize=True position_weight=1.0 denominator='geo'` (mean normalized MAP
+0.881, mean rank 74.8, worst 151/270). **The pre-session default `n=(2,4) idf=0 dim=1
+normalize=False` ranks 334 / 161 / 99 / 94 / 98 of 432 across the five full-grid tasks, and
+256/270 and 255/270 on the two product tasks**: not a compromise, just unchosen.
+
+### Recommended library defaults (evidence, 2026-09-06)
+
+Scored as "mean fraction of each task's own best MAP" over all six benchmarks:
+
+| candidate default | abtbuy | ermagellan | typo | typo_brutal | typo_hard | typo_ms | mean % |
+|---|---|---|---|---|---|---|---|
+| pre-session (`normalize=False`, dice) | 0.7238 | 0.3018 | 0.8578 | 0.1557 | 0.7292 | 0.8636 | 69% |
+| current (`normalize=True`, dim 1, dice) | 0.7894 | 0.6408 | 0.8690 | 0.1559 | 0.7090 | 0.8562 | 76% |
+| **+ `dim=2` + `denominator='geo'`** | **0.7959** | **0.7186** | **0.8843** | **0.1691** | **0.7279** | **0.8740** | **79%** |
+| also `idf_exponent=1.0` | 0.8759 | 0.8102 | 0.8791 | 0.1556 | 0.7289 | 0.8464 | 81% |
+
+Row 3 beats the current defaults on **all six benchmarks** -- a Pareto improvement, nothing
+traded. Row 4 scores higher on average but loses on `typo_ms` (0.8464 vs 0.8562) and
+`typo_brutal`, and would give up `idf_exponent=0.0`'s guarantee that the unweighted path stays
+bit-for-bit, so it is *not* recommended as a default even though it ranks best on the mean.
+
+⚠ `n` is deliberately left at `(2,4)` in all of these. `(1,2)` scores better on every typo task
+but is a poor index key (see item 14), so it belongs in per-domain advice rather than a default.
 
 ⚠ **`normalize` and `idf_exponent` substitute for each other** -- both counteract length bias,
 so applying both over-corrects. On abtbuy `normalize=True` is worth +0.145 MAP at
@@ -408,10 +430,15 @@ get fixed.
     split, any recommended `n` is a compromise between the two roles rather than an optimum for
     either.
 
-21. **`ermagellan` was only measured on a 19-configuration shortlist**, not the full 432-point
-    grid, because `n=(1,)` there costs 341s per configuration to measure noise. The six-task
-    aggregate therefore ranks 19 configurations; the five-task one ranks all 432. Both agree on
-    the winner, but do not quote a "rank N/19" as if it came from the full grid.
+21. **Closed 2026-09-06: `ermagellan` now covers 270 of the 432 grid points** (the 162
+    containing `n=1` are still excluded -- 341 s each to score MAP 0.008). ⚠ The shortlist it
+    replaced was actively misleading, not merely narrow: it reported `normalize=False`,
+    `position_weight=0.0`, `dice` at MAP 0.7989 where the full grid gives `normalize=True`,
+    `position_weight=1.0`, `geo` at **0.9039**. The shortlist had been selected from other tasks'
+    rankings, so it inherited their preferences and never sampled the region ermagellan wanted.
+    The six-task aggregate ranks those 270 unigram-free configurations; the five-task one ranks
+    all 432, and their per-task bests differ wherever the optimum used unigrams. Do not mix rows
+    between the two.
 
 22. **`idf_exponent`'s optimum on product matching is still at the grid edge.** abtbuy peaks at
     the largest value swept (3.0 → 0.9500, 4.0 → 0.9467 so it may just have turned over), and

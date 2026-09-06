@@ -229,6 +229,13 @@ class ApproxWordListV7:
         # n_gram -> [(word_index, (location, ...)), ...] for words where it occurs 2+ times.
         # kept as python objects: rare, variable-length, and only read by the dp fallback
         self._multi: List[Dict[str, List[Tuple[int, Tuple[float, ...]]]]] = [dict() for _ in self._n_list]
+        # the same multi-occurrence postings flattened: n_gram -> (locations, segment offsets,
+        # word indices). the dp fallback needs them as per-word tuples, but the far hotter
+        # "query n-gram occurs once, indexed word repeats it" branch only needs a minimum per
+        # word, which `np.minimum.reduceat` computes over the flat array in one call instead of
+        # a python loop with a generator-expression `min` per posting. built in `_freeze`
+        self._multi_flat: List[Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]] = [
+            dict() for _ in self._n_list]
 
         # writes land here and are merged into the numpy arrays by `_freeze`, so that the
         # python-side posting lists are never retained alongside their numpy equivalent
@@ -351,6 +358,7 @@ class ApproxWordListV7:
             multi = self._multi[n_idx]
             words_by_gram = self._words[n_idx]
             locs_by_gram = self._locs[n_idx]
+            multi_flat = self._multi_flat[n_idx]
 
             for n_gram in self._pending_grams[n_idx]:
                 # word indices are laid out [single-occurrence..., multi-occurrence...] so
@@ -378,6 +386,25 @@ class ApproxWordListV7:
                                          else np.empty(0, dtype=np.int32))
                 locs_by_gram[n_gram] = (np.concatenate(loc_parts) if loc_parts
                                         else np.empty(0, dtype=np.float64))
+
+                # flatten the same multi-occurrence postings for the reduceat path. segments are
+                # never empty -- an entry is only in `multi` when it holds 2+ locations -- which
+                # matters because `reduceat` returns the element itself rather than an identity
+                # for a zero-length segment
+                if multi_entries:
+                    lengths = np.fromiter((len(locs) for _, locs in multi_entries),
+                                          dtype=np.int64, count=len(multi_entries))
+                    offsets = np.zeros(len(multi_entries), dtype=np.int64)
+                    np.cumsum(lengths[:-1], out=offsets[1:])
+                    multi_flat[n_gram] = (
+                        np.concatenate([np.asarray(locs, dtype=np.float64)
+                                        for _, locs in multi_entries]),
+                        offsets,
+                        np.fromiter((wi for wi, _ in multi_entries),
+                                    dtype=np.int64, count=len(multi_entries)),
+                    )
+                else:
+                    multi_flat.pop(n_gram, None)
 
             pending_words.clear()
             pending_locs.clear()
@@ -539,6 +566,7 @@ class ApproxWordListV7:
             words_by_gram = self._words[n_idx]
             locs_by_gram = self._locs[n_idx]
             multi = self._multi[n_idx]
+            multi_flat = self._multi_flat[n_idx]
             score = scores[n_idx]
 
             grams = query_grams[n_idx]
@@ -573,12 +601,20 @@ class ApproxWordListV7:
                         score[single_idxs] += weight * (2.0 - position_weight * displacement)
 
                     # 1-vs-m emd is min(min_dist, 2) + (m - 1), so the contribution
-                    # 1 + m - emd collapses to 2 - min(min_dist, 2), independent of m
-                    location = locations[0]
-                    for other_word_index, other_locs in multi.get(n_gram, ()):
-                        min_dist = min(abs(location - y) for y in other_locs)
-                        displacement = min_dist if min_dist < 2.0 else 2.0
-                        score[other_word_index] += weight * (2.0 - position_weight * displacement)
+                    # 1 + m - emd collapses to 2 - min(min_dist, 2), independent of m.
+                    #
+                    # this is the hottest branch on long documents, not the dp: most query
+                    # n-grams occur once in the query and several times in each document, so it
+                    # runs for far more (n-gram, document) pairs than the dp does. profiled
+                    # 2026-09-06 on ermagellan n=(2,4) it was 453 716 `min` and 315 668 `abs`
+                    # calls over 8 queries. `reduceat` takes the per-word minimum over the
+                    # flattened postings in one call instead
+                    flat_entry = multi_flat.get(n_gram)
+                    if flat_entry is not None:
+                        flat_locs, offsets, multi_idxs = flat_entry
+                        min_dist = np.minimum.reduceat(np.abs(flat_locs - locations[0]), offsets)
+                        np.minimum(min_dist, 2.0, out=min_dist)
+                        score[multi_idxs] += weight * (2.0 - position_weight * min_dist)
                 else:
                     # the query n-gram repeats: same collapse with the roles swapped
                     n_locations = len(locations)

@@ -160,7 +160,48 @@ additions and scores 1e-14 apart are no longer exact ties, so V7's alphabetical 
 applying. `lookup`'s docstring promises reproducible tie order, so this would have been a
 documented behaviour change on top of a non-win.
 
-### The pattern behind both rejections
+### Landed: `reduceat` on the 1-vs-m branch -- the win the dp work was not
+
+Re-profiling after the two dp changes showed the dp is **no longer the bottleneck**: 30% of an
+ermagellan lookup at `n=(2,4)` and `(2,3)` (was 78%), and of that the *scalar* `emd_1d_dp` (21%)
+now exceeds the batched kernel (9%). What the profile did show, by self-time, was 453 716
+`builtins.min` and 315 668 `builtins.abs` calls over 8 queries -- all from the branch where the
+**query** n-gram occurs once and the indexed word repeats it:
+
+```python
+for other_word_index, other_locs in multi.get(n_gram, ()):
+    min_dist = min(abs(location - y) for y in other_locs)
+```
+
+That runs for far more (n-gram, document) pairs than the dp ever does. `_freeze` now also stores
+each n-gram's multi postings flattened -- `(locations, segment offsets, word indices)` in
+`_multi_flat` -- so the branch is `np.minimum.reduceat` over one array instead of a python loop
+with a generator-expression `min` per posting.
+
+Bit-identical: worst score difference exactly 0.0 and zero ranking changes over 344 lookups,
+including interleaved `add_word`/`lookup` sequences (`_freeze` rebuilds the flat arrays only for
+touched n-grams, so a stale cache was the risk). Measured under CPU contention, so read the
+ratios rather than the absolute times:
+
+| task | n | lookup | build |
+|---|---|---|---|
+| typo_hard | (1, 2) | **2.47x** | 0.98x |
+| typo | (1, 2) | **2.40x** | 1.03x |
+| abtbuy | (2, 3) | **1.69x** | 0.82x |
+| abtbuy | (2, 4) | **1.60x** | 0.84x |
+| typo | (2, 4) | 1.37x | 0.94x |
+| typo_hard | (2, 4) | 1.19x | 0.84x |
+| ermagellan | (2, 4) | 1.11x | 0.85x |
+| ermagellan | (1,) | 0.98x | 0.57x |
+| ermagellan | (2, 3) | 0.89x | 0.70x |
+
+Note the shape: this helps the **short-string** workloads most, the exact opposite of the dp work,
+which only ever helped long documents. Build is slower (the flat arrays are constructed in
+`_freeze`) and that was accepted as a one-off against a repeated lookup cost. The ermagellan rows
+are inconsistent (1.11x vs 0.89x on near-identical configurations) because the 270-config sweep
+was saturating the machine; they were not re-measured.
+
+### The pattern behind the two rejections
 
 After the equal-mass shortcut and `_emd_1d_batch` landed, **the dp is no longer where the time
 goes**, so further dp micro-optimisation keeps failing to show up end to end. Both banding and

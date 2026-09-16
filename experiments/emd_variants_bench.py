@@ -46,9 +46,11 @@ VARIANTS = {
     'emd_1d_hybrid': emd_1d_hybrid,
 }
 
-# two variants are deliberately excluded, both strictly dominated:
-#   emd_1d_slow  enumerates C(len_x, len_y) combinations -- factorial worst case (HANDOFF #11)
-#   emd_1d_old   is emd_1d_hybrid's preprocessing followed by that same brute-force enumeration,
+# emd_1d_slow was deleted from nmd/emd_1d.py on 2026-09-16 (HANDOFF #11): it enumerated
+# C(len_x, len_y) combinations, i.e. a factorial worst case, and nothing referenced it.
+#
+# one variant is still deliberately excluded here, as strictly dominated:
+#   emd_1d_old   is emd_1d_hybrid's preprocessing followed by a brute-force enumeration,
 #                where hybrid substitutes a dp. same rules, worse tail, so hybrid dominates it.
 #                it stays in nmd/emd_1d.py because tests/test_emd_correctness.py uses it as an
 #                independent oracle -- being slow and obviously-correct is the point there

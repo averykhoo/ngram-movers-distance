@@ -5,26 +5,6 @@ from typing import Tuple
 from typing import Union
 
 
-def emd_1d_slow(positions_x: Sequence[float],
-                positions_y: Sequence[float],
-                ) -> float:
-    # positions_x must be longer
-    if len(positions_x) < len(positions_y):
-        positions_x, positions_y = positions_y, positions_x
-
-    # sort both lists
-    positions_x = sorted(positions_x)
-    positions_y = sorted(positions_y)
-
-    # find the minimum cost alignment
-    costs = [len(positions_y)]
-    for x_combination in itertools.combinations(positions_x, len(positions_y)):
-        costs.append(sum(abs(x - y) for x, y in zip(x_combination, positions_y)))
-
-    # the distance is the min cost alignment plus a count of unmatched points
-    return len(positions_x) - len(positions_y) + min(costs)
-
-
 def emd_1d_dp(positions_x: Sequence[Union[int, float]],
               positions_y: Sequence[Union[int, float]],
               ) -> float:

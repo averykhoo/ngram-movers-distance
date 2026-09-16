@@ -3,6 +3,22 @@
 * A string similarity measure based on Earth Mover's Distance
 * See [ngram-movers-distance](https://github.com/averykhoo/ngram-movers-distance) for code
 
+## What this is good for, and what it is not
+
+Measured against char-BM25, token BM25, tf-idf cosine and brute-force Damerau-Levenshtein over
+17 retrieval tasks, tune/test halves, every system tuned on its own grid
+(`docs/bow-plan.md` part 10, measured 2026-09-06):
+
+| your data | verdict |
+|---|---|
+| **short strings** -- spelling correction, dictionary / name / code lookup, roughly under 20 characters, where the error model is edits | **use it.** Best system measured: +0.07 to +0.28 test MAP over the best baseline on all five such tasks, at 1-7 ms/query, and ~100x faster than the brute-force edit-distance scan that is the honest alternative |
+| **records** -- product titles, citations, addresses, 50-300 characters | **probably not.** Within +/-0.02 MAP of char-BM25 or tf-idf cosine on nine of ten tasks and 0.057 behind on the tenth, at 5-10x the query cost. Worth it only if one index has to serve both regimes |
+| **documents** -- 100+ characters of prose | **no.** Behind BM25 (nDCG@10 0.650 vs 0.679 on scifact), and only that close with `normalize=False` and `n=(4,)`; at the library defaults it scores 0.029 |
+
+Nor is it a useful *complement* to a text-search engine: as a reranker over BM25's top-50, an
+RRF partner, or a tuned interpolation, it never adds more than +0.005 MAP -- one query. Treat it
+as a replacement for an edit-distance scan, not as a general text-search ranker.
+
 ## Why another string matching algorithm?
 
 * Edit distance really wasn't cutting it when I needed to look up a dictionary for a misspelled word

@@ -11,7 +11,6 @@ from nmd.emd_1d import emd_1d_hybrid
 from nmd.emd_1d import emd_1d_old as emd_1d_fast_original
 
 
-# Assume emd_1d_slow and potentially other versions exist for testing
 def emd_1d_dp_optimized(positions_x: Sequence[Union[int, float]],
                         positions_y: Sequence[Union[int, float]],
                         ) -> float:
@@ -130,7 +129,6 @@ def check_correct_emd_1d(positions_x: Sequence[Union[int, float]],
     list_y = list(positions_y)
 
     # Calculate all results
-    # result_slow = emd_1d_slow(list_x, list_y)
     result_fast_original = emd_1d_fast_original(list_x, list_y)  # BASELINE
     result_dp = emd_1d_dp(list_x, list_y)
     result_dp_opt = emd_1d_dp_optimized(list_x, list_y)

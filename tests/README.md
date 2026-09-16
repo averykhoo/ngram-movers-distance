@@ -1,7 +1,14 @@
 # Tests for N-gram Mover's Distance
 
-Counts below were measured 2026-09-06 (`1052 passed, 1 xfailed`). They will drift — re-run
-`pytest --collect-only -q` rather than trusting them.
+Counts below were re-measured 2026-09-16: **1103 collected, 1102 passed, 1 xfailed**. They will
+drift — re-run `pytest --collect-only -q` rather than trusting them.
+
+⚠ Corrected 2026-09-16. This line previously read `1052 passed, 1 xfailed (2026-09-06)` and
+`test_index_v7_knobs.py` was listed at 60 rather than its actual 92. Neither looks like drift:
+the corrected table sums to exactly 1103, matching what `--collect-only` reports, whereas 1052
+never matched even this file's own table (which summed to 1071 with the wrong knobs row). Two
+numbers were written down without being re-run. If you edit a count here, re-collect and
+check that the column sums to the header.
 
 ## Running
 
@@ -33,7 +40,7 @@ it is missing — it is the only test file that needs a corpus.
 | `test_index_v6.py` | 79 | `ApproxWordListV6`, i.e. the shipped `WordList` — the two bugs fixed 2026-09-05, and guards that the frozen V3/V5 behaviour and the `n=(2, 4)` default did **not** move |
 | `test_index_v7.py` | 125 | `ApproxWordListV7`: container protocol, that the top-k equals an exhaustive scan, and alphabetical order across boundary ties |
 | `test_index_v7_idf.py` | 139 | V7's `idf_exponent` path, including `test_exponent_zero_matches_no_exponent_exactly` |
-| `test_index_v7_knobs.py` | 60 | V7's `position_weight` and `denominator`, and that both are inert at their defaults; `TestDefaults` pins `normalize=True` |
+| `test_index_v7_knobs.py` | 92 | V7's `position_weight` and `denominator`, and that both are inert at their defaults; `TestDefaults` pins `normalize=True` |
 | `test_word_set.py` | 42 | `WordSet` outside idf: `min_similarity`, defaults, set protocol, unicode, edge cases |
 | `test_word_set_idf.py` | 21 | `WordSet`'s incrementally-maintained idf, against a brute-force document frequency |
 | `test_bow.py` | 59 | `bow_ngram_movers_distance`, plus `emd_1d_fast ≡ emd_1d_dp` (`TestEmd1dFast`) |

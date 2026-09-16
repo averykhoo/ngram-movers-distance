@@ -40,6 +40,22 @@ summary is six paragraphs, one per part, and its load-bearing claim is Part 7's:
 the model number in a catalogue and the typo itself in a misspelling, which is why idf helps on
 records and hurts on typos, and therefore why the library's advice is per-domain.
 
+**`origin/experiments` deleted.** Its tip was `b39f9d9 "docstrings"` (Avery, 26 Jul 2022), an
+ancestor of `master` 67 commits back, sitting just after `19fc212 move stuff around`. Verified
+contained with `git merge-base --is-ancestor` immediately before the push, not just at survey
+time. Nothing unique was on it; the tip sha is recorded here in case the label is ever wanted
+back. ⚠ `origin/pypi-oidc-attestations` was **not** deleted and should not be: `git cherry` marks
+its one commit `+`, and `.github/workflows/publish-to-pypi.yml` (81 lines) exists nowhere else in
+the repo -- `master` has no `.github/` at all. That workflow is what item 13's version bump is
+for.
+
+⚠ **Two wrong test counts corrected in `tests/README.md`.** Its header claimed
+`1052 passed, 1 xfailed` as of 2026-09-06, and its per-file table listed `test_index_v7_knobs.py`
+at 60 against an actual 92. Not drift: the corrected table sums to exactly 1103, which is what
+`--collect-only` reports, while 1052 never matched even that file's own table (1071 with the bad
+row). Both numbers were written down rather than re-run, in `eeffc03`. The header now carries
+collected as well as passed, so the next person can check the sum without running anything.
+
 **This file exists as of today.** `HANDOFF.md` had grown to 803 lines, ~530 of them dated session
 narrative, which buried the open board. The three dated entries moved here verbatim — no edits in
 the move — and `HANDOFF.md` gained a "Decisions and negative results that still bind" table that

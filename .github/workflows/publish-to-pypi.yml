@@ -33,12 +33,18 @@ jobs:
           fetch-depth: 0 # full history, so the ancestry check below can resolve
 
       # A tag pushed from a side branch would publish code that is not on master.
+      #
+      # The tag name reaches the script through env: rather than through ${{ }}
+      # interpolation: git permits $, backticks and parens in a ref name, so
+      # interpolating one straight into a run: block is an injection surface.
       - name: Verify tag commit is merged into master
         if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           git fetch origin master:master
-          if ! git merge-base --is-ancestor "${{ github.ref_name }}" master; then
-            echo "::error::Tag ${{ github.ref_name }} is not in master's history."
+          if ! git merge-base --is-ancestor "$TAG" master; then
+            echo "::error::Tag $TAG is not in master's history."
             exit 1
           fi
 
@@ -59,6 +65,24 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match __version__ $PKG_VERSION."
             exit 1
           fi
+
+      # PyPI refuses re-uploads of a version that already exists, even a deleted
+      # or yanked one. Without this, re-tagging a published version passes every
+      # guard, burns the whole matrix, and dies on the very last step with
+      # "400 File already exists". Fails closed: anything but a clean 404 stops.
+      - name: Verify the version is not already on PyPI
+        if: github.ref_type == 'tag'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          URL="https://pypi.org/pypi/nmd/$VERSION/json"
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$URL")
+          case "$STATUS" in
+            404) echo "nmd $VERSION is not on PyPI yet." ;;
+            200) echo "::error::nmd $VERSION is already on PyPI; it cannot be re-uploaded."
+                 exit 1 ;;
+            *)   echo "::error::Unexpected HTTP $STATUS from PyPI; refusing to guess."
+                 exit 1 ;;
+          esac
 
   # ---------------------------------------------------------------------------
   # STAGE 2: the suite, across the supported matrix.

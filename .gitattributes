@@ -1,0 +1,11 @@
+# GitHub Actions runners are Linux, and these workflows embed shell scripts.
+# A carriage return at end of line breaks heredoc terminators there (the
+# closing token never matches) and it breaks on the runner rather than here,
+# which is the expensive kind of failure.
+#
+# core.autocrlf=true already normalizes these to LF on this machine, so this is
+# belt and braces, not a fix for an observed bug. It is worth pinning anyway:
+# autocrlf is per-machine config, so a clone on a box with autocrlf=false would
+# behave differently and nothing in the repo would say so.
+*.yml  text eol=lf
+*.yaml text eol=lf

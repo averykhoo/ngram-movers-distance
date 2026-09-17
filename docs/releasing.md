@@ -23,9 +23,15 @@ tag, no GitHub Release. **The tag you push is the only source of truth.**
 2. **Derive the tag from the file** rather than retyping it, so the two cannot disagree:
 
    ```bash
-   git tag "v$(grep -oP "__version__\s*=\s*'\K[^']+" nmd/__init__.py)"
-   git push --follow-tags
+   VERSION=$(sed -n "s/^__version__ = '\(.*\)'/\1/p" nmd/__init__.py)
+   test -n "$VERSION" && git tag "v$VERSION" && git push --follow-tags
    ```
+
+   `sed` rather than `grep -oP`: Git Bash on this machine runs with `LANG` unset, where
+   `grep -P` refuses with "supports only unibyte and UTF-8 locales" and returns nothing — which
+   in a `git tag "v$(...)"` one-liner silently creates a tag named `v`, and `v` matches the
+   `v*` trigger. The `test -n` guard is what stops that; the workflow's own copy of the read
+   runs on ubuntu and already checks for an empty result.
 
 3. **Watch the run.** Stages: validate → test matrix + dependency-free install check → build,
    `twine check`, clean-venv smoke test, provenance, publish. Build through publish are steps in

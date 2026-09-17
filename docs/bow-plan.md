@@ -691,8 +691,11 @@ accumulates per n-gram type) is still worth making.
 - 241 queries, so differences below ~0.03 hit@1 are not resolvable; `n=1` and
   `n=(1,2)` are tied within noise, but both clearly beat `(2,4)`.
 - Corruptions are uniform random edits. Real typos are keyboard-adjacent or
-  phonetic, and the README's own examples (`asalamalaikum` ->
-  `assalamualaikum`) are transliteration variants with a different edit profile.
+  phonetic, and the README's examples at the time (`asalamalaikum` ->
+  `assalamualaikum`) were transliteration variants with a different edit profile.
+  The README's examples were changed to phonetic English misspellings on
+  2026-09-17 (`fotografer` -> `photographer`); this caveat is about the *corpus*
+  measured here, which is unchanged, so it still stands.
 - English only; `experiments/words_ms.txt` is untested.
 
 ## Part 8 — every metric, every dataset, one ranking

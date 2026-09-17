@@ -19,11 +19,12 @@ pip install nmd  # no dependencies, python >= 3.10
 from nmd import WordList
 
 word_list = WordList((2, 4), filter_n=0)
-for word in ('assalamualaikum', 'waalaikumsalam'):
+for word in ('photographer', 'cartographer', 'choreographer', 'photography'):
     word_list.add_word(word)
 
-word_list.lookup('asalamalaikum')
-# [('assalamualaikum', (19.71, 25.65)), ('waalaikumsalam', (14.05, 18.99))]
+word_list.lookup('fotografer')
+# [('photographer', (9.9, 13.87)), ('cartographer', (7.95, 11.92)),
+#  ('photography', (7.76, 9.73)), ('choreographer', (5.91, 9.86))]
 ```
 
 Code: [ngram-movers-distance](https://github.com/averykhoo/ngram-movers-distance)
@@ -34,6 +35,9 @@ Code: [ngram-movers-distance](https://github.com/averykhoo/ngram-movers-distance
     * With an edit distance of 1 or 2, the results are not useful since the target word isn't found
     * With a distance >=5, the results are meaningless since it contains half the dictionary
     * Same goes for Damerau-Levenshtein
+    * concretely, for `fotografer` over the 41.5k words of `experiments/words_en.txt`:
+      Damerau-Levenshtein finds **nothing** within distance 2, and **65 words** within
+      distance 5. nmd ranks `photographer` first (measured 2026-09-17)
 * Also, edit distance is pretty slow when looking up long words in a large dictionary
     * Even after building a finite state automaton or using a trie to optimize lookup
     * NMD was designed with indexing in mind
@@ -134,8 +138,9 @@ for word in words:
     word_list.add_word(word)
 
 # lookup a word -- returns [(word, (index score, recomputed nmd)), ...], best first
-print(word_list.lookup(f'asalamalaikum'))  # -> [('assalamualaikum', (19.71, 25.65)), ...]
-print(word_list.lookup(f'walaikumalasam'))  # -> [('waalaikumsalam', (16.40, 25.14)), ...]
+# over the 41.5k words of experiments/words_en.txt:
+print(word_list.lookup(f'fotografer'))   # -> [('photographer', (9.90, 13.87)), ...]
+print(word_list.lookup(f'beaurocracy'))  # -> [('bureaucracy', (11.73, 17.45)), ...]
 ```
 
 ## `ApproxWordListV7`
@@ -170,8 +175,8 @@ word_list.add_words(words)  # or add_word() one at a time
 weighted = ApproxWordListV7((2, 4), idf_exponent=2.0)
 
 # lookup returns [(word, score), ...], most similar first
-print(word_list.lookup(f'asalamalaikum'))
-print(word_list.lookup(f'walaikumalasam', top_k=3))
+print(word_list.lookup(f'fotografer'))  # -> [('photographer', 0.437), ...]
+print(word_list.lookup(f'fotografer', top_k=3))
 
 # two more scoring knobs, both defaulting to the plain nmd behaviour:
 #   position_weight  how much of the positional displacement to charge for, in [0, 1].

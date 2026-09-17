@@ -124,9 +124,9 @@ installed but **nothing in `nmd/` imports it** — it was only used to evaluate 
 
 ## Releasing
 
-`docs/releasing.md` has the procedure and the current state. In short, as of 2026-09-17: tag
+`docs/releasing.md` has the procedure and the current state. In short, as of 2026-09-18: tag
 `v*` triggers `.github/workflows/publish-to-pypi.yml`, which never writes to the repository;
-the workflow is committed but **not pushed and has never run**; and item 13 below blocks the
+the workflow is pushed and active on GitHub but **has never run**; and item 13 below blocks the
 first release.
 
 ## What changed recently

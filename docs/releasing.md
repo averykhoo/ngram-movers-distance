@@ -56,10 +56,15 @@ A tag is deletable (`git push --delete origin <tag>`); a PyPI upload is not. Eve
 
 ## Status
 
-**Never run, as of 2026-09-17.** The workflow is not yet pushed; `actions/workflows` on the
-repository reports `total_count: 0`. Published versions `0.0.1`–`0.0.6` all predate it and went
-out by hand. The first tag pushed will be the first real exercise of the pipeline — a
-`workflow_dispatch` dry run first is worth the two minutes.
+**Pushed 2026-09-18, never run.** GitHub now lists `Publish to PyPI` and `Test (reusable)` as
+active workflows, and neither has any runs: the triggers are `push: tags: ['v*']` and
+`workflow_dispatch`, so pushing to `master` does not start one. (The one run on the repository
+is GitHub's own `dynamic/dependabot/update-graph`, which fired because `pyproject.toml`
+changed.)
+
+Published versions `0.0.1`–`0.0.6` all predate the pipeline and went out by hand. The first tag
+pushed will be the first real exercise of it — a `workflow_dispatch` dry run first is worth the
+two minutes.
 
 ## Archived: how this used to work (0.0.1 – 0.0.6)
 

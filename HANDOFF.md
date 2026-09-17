@@ -20,10 +20,12 @@ refreshed.
 2. **Items 14/20 — prune-then-rescore (`rescore_n`).** The highest-value remaining code change:
    `n=(1,2)` wins every short-string task but is a poor index key, and this is the only item
    that would let V7 use it as one anyway. Real API surface work, not a probe.
-3. **Hygiene whenever convenient**: 12 (README todos), 13 (version bump, only at publish time),
-   27 (BEIR caveat, already written, no action needed), 28 (re-measure Part 10 timings on an
-   idle machine before quoting them again).
-4. **Low priority / speculative, only if someone is already deep in this code**: 26 (mix
+3. **Item 13 — bump `__version__`**, which is no longer hygiene. `0.0.6` is already on PyPI, so
+   the publish pipeline cannot succeed until it moves. See `docs/releasing.md`.
+4. **Hygiene whenever convenient**: 12 (README todos), 27 (BEIR caveat, already written, no
+   action needed), 28 (re-measure Part 10 timings on an idle machine before quoting them
+   again).
+5. **Low priority / speculative, only if someone is already deep in this code**: 26 (mix
    normalization knob) and 29 (real WAND) -- both are documented well enough to pick up cold,
    neither is blocking anything else.
 
@@ -120,6 +122,13 @@ Conda env named after the repo folder:
 Installed and used: `numpy` 2.2.4, `scipy` 1.15.2, `pyroaring`, `regex`. `numba` 0.61.2 is
 installed but **nothing in `nmd/` imports it** — it was only used to evaluate a prototype.
 
+## Releasing
+
+`docs/releasing.md` has the procedure and the current state. In short, as of 2026-09-17: tag
+`v*` triggers `.github/workflows/publish-to-pypi.yml`, which never writes to the repository;
+the workflow is committed but **not pushed and has never run**; and item 13 below blocks the
+first release.
+
 ## What changed recently
 
 | commit | what |
@@ -152,8 +161,8 @@ get fixed.
    `ApproxWordListV6`; V7 remains opt-in via `from nmd.nmd_index_v7 import ApproxWordListV7`.
 2. **Should `pyproject.toml` declare dependencies or extras?** No. Declaring none is correct
    and intended. The optional modules and what they each need are now a table in the README
-   instead. (`__version__` is still `0.0.6` and still needs bumping before any `flit publish`
-   — that is the one part of this item left open, see #13.)
+   instead. (`__version__` is still `0.0.6` and still needs bumping before any release — that
+   is the one part of this item left open, see #13.)
 3. **`nmd_core` now calls `emd_1d_fast`** instead of `emd_1d_dp`. Approved because
    `emd_1d_fast` is pure python and lives in the same module, so it costs no dependency.
    Same values, ~1.15x on pairwise comparisons; equivalence pinned by
@@ -254,9 +263,11 @@ get fixed.
 12. Pre-existing README todos, untouched: `remove()`/`discard()` on the V7 index (needs index
     compaction; `WordSet` already has them), prefix lookup, a `min_similarity` filter on
     lookup, trying cython, and `from nmd import nmd` returning a module rather than a function.
-13. **`__version__` is `0.0.6` and has not been bumped** for anything since. Needs
-    incrementing before `flit publish`; not bumped unprompted, since it is only meaningful at
-    publish time.
+13. **`__version__` is `0.0.6` and has not been bumped** for anything since. ⚠ **Now a hard
+    blocker, not hygiene**: `0.0.6` is already on PyPI and PyPI refuses re-uploads, so the
+    publish pipeline cannot succeed at this version. `validate-tag` checks this and stops in
+    ~20s rather than at the upload. Still not bumped unprompted, since it is only meaningful at
+    release time. Procedure: `docs/releasing.md`.
 14. **The Part 7 finding has no corresponding code change.** `n=(1, 2)` beats the README's
     `(2, 4)` default by 11 points of hit@1 on typo correction, but unigrams have almost no
     selectivity as an index key. The suggested design — prune on 2- or 3-grams, rescore with

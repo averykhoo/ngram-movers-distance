@@ -1,7 +1,46 @@
 # N-gram Mover's Distance
 
-* A string similarity measure based on Earth Mover's Distance
-* See [ngram-movers-distance](https://github.com/averykhoo/ngram-movers-distance) for code
+**Fuzzy lookup for short strings: spelling correction, and dictionary, name or code lookup.**
+
+A string similarity measure based on the Earth Mover's Distance, plus an index built around it.
+It answers *"which entries in my list is this typo closest to?"* for strings of roughly under 20
+characters, where the errors are edits -- transpositions, dropped letters, phonetic guesses.
+
+On that job it is the best of the systems measured below: +0.07 to +0.28 test MAP over the best
+baseline on all five such tasks, at 1-7 ms/query, and ~100x faster than the brute-force
+edit-distance scan that is the honest alternative. On records and on prose it is not; see
+[what this is good for](#what-this-is-good-for-and-what-it-is-not) before reaching for it.
+
+```bash
+pip install nmd  # no dependencies, python >= 3.10
+```
+
+```python
+from nmd import WordList
+
+word_list = WordList((2, 4), filter_n=0)
+for word in ('assalamualaikum', 'waalaikumsalam'):
+    word_list.add_word(word)
+
+word_list.lookup('asalamalaikum')
+# [('assalamualaikum', (19.71, 25.65)), ('waalaikumsalam', (14.05, 18.99))]
+```
+
+Code: [ngram-movers-distance](https://github.com/averykhoo/ngram-movers-distance)
+
+## Why another string matching algorithm?
+
+* Edit distance really wasn't cutting it when I needed to look up a dictionary for a misspelled word
+    * With an edit distance of 1 or 2, the results are not useful since the target word isn't found
+    * With a distance >=5, the results are meaningless since it contains half the dictionary
+    * Same goes for Damerau-Levenshtein
+* Also, edit distance is pretty slow when looking up long words in a large dictionary
+    * Even after building a finite state automaton or using a trie to optimize lookup
+    * NMD was designed with indexing in mind
+        * A simpler index could be used for Jaccard or cosine similarity over ngrams
+* EMD (and hence NMD) can be optimized to run really fast with some constraints
+    * Values are 1-dimensional scalars
+    * Values are always quantized
 
 ## What this is good for, and what it is not
 
@@ -19,21 +58,13 @@ Nor is it a useful *complement* to a text-search engine: as a reranker over BM25
 RRF partner, or a tuned interpolation, it never adds more than +0.005 MAP -- one query. Treat it
 as a replacement for an edit-distance scan, not as a general text-search ranker.
 
-## Why another string matching algorithm?
-
-* Edit distance really wasn't cutting it when I needed to look up a dictionary for a misspelled word
-    * With an edit distance of 1 or 2, the results are not useful since the target word isn't found
-    * With a distance >=5, the results are meaningless since it contains half the dictionary
-    * Same goes for Damerau-Levenshtein
-* Also, edit distance is pretty slow when looking up long words in a large dictionary
-    * Even after building a finite state automaton or using a trie to optimize lookup
-    * NMD was designed with indexing in mind
-        * A simpler index could be used for Jaccard or cosine similarity over ngrams
-* EMD (and hence NMD) can be optimized to run really fast with some constraints
-    * Values are 1-dimensional scalars
-    * Values are always quantized
-
 # Installation and dependencies
+
+```bash
+pip install nmd
+```
+
+Requires python 3.10 or newer.
 
 **`nmd` itself has no dependencies, and is meant to stay that way.** `import nmd` gives you
 the two things that are pure python, and pulls in nothing third-party:
@@ -102,9 +133,9 @@ word_list = WordList((2, 4), filter_n=0)
 for word in words:
     word_list.add_word(word)
 
-# lookup a word
-print(word_list.lookup(f'asalamalaikum'))  # -> 'assalamualaikum'
-print(word_list.lookup(f'walaikumalasam'))  # -> 'waalaikumsalam'
+# lookup a word -- returns [(word, (index score, recomputed nmd)), ...], best first
+print(word_list.lookup(f'asalamalaikum'))  # -> [('assalamualaikum', (19.71, 25.65)), ...]
+print(word_list.lookup(f'walaikumalasam'))  # -> [('waalaikumsalam', (16.40, 25.14)), ...]
 ```
 
 ## `ApproxWordListV7`
@@ -330,13 +361,3 @@ def real_quick_ratio(self):
 * prefix lookup
     * look for all strings that are approximately prefixed
     * like existing index but not normalized and ignoring unmatched ngrams from target
-
-## Publishing (notes for myself)
-
-* init
-    * `pip install flit`
-    * `flit init`
-    * make sure `nmd/__init__.py` contains a docstring and version
-* publish / update
-    * increment `__version__` in `nmd/__init__.py`
-    * `flit publish`

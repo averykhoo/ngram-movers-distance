@@ -1,0 +1,220 @@
+name: Publish to PyPI
+
+# Tag-triggered. To release:
+#
+#     # bump __version__ in nmd/__init__.py first, and commit it
+#     git tag v0.0.7 && git push --follow-tags
+#
+# workflow_dispatch runs everything EXCEPT the upload, as a repeatable dry run.
+# Nothing here ever writes to the repository: no version bump, no commit, no tag,
+# no GitHub Release. The tag you push is the only source of truth.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # STAGE 1: cheap guards. Fails in ~20s rather than after the matrix.
+  # ---------------------------------------------------------------------------
+  validate-tag:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history, so the ancestry check below can resolve
+
+      # A tag pushed from a side branch would publish code that is not on master.
+      - name: Verify tag commit is merged into master
+        if: github.ref_type == 'tag'
+        run: |
+          git fetch origin master:master
+          if ! git merge-base --is-ancestor "${{ github.ref_name }}" master; then
+            echo "::error::Tag ${{ github.ref_name }} is not in master's history."
+            exit 1
+          fi
+
+      # flit reads the version from nmd/__init__.py. Nothing keeps that in sync
+      # with the tag, so check it here -- before anything irreversible. A tag is
+      # deletable (git push --delete origin <tag>); a PyPI upload is not.
+      - name: Verify tag matches package version
+        if: github.ref_type == 'tag'
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(grep -oP "__version__\s*=\s*['\"]\K[^'\"]+" nmd/__init__.py)
+          echo "tag=$TAG_VERSION package=$PKG_VERSION"
+          if [ -z "$PKG_VERSION" ]; then
+            echo "::error::Could not read __version__ from nmd/__init__.py."
+            exit 1
+          fi
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match __version__ $PKG_VERSION."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # STAGE 2: the suite, across the supported matrix.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    needs: validate-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        python-version: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
+        include:
+          - os: macos-latest
+            python-version: "3.12"
+    permissions:
+      contents: read
+    uses: ./.github/workflows/template-test.yml
+    with:
+      os: ${{ matrix.os }}
+      python-version: ${{ matrix.python-version }}
+
+  # ---------------------------------------------------------------------------
+  # STAGE 2b: the dependency-free promise, checked against the built wheel.
+  #
+  # HANDOFF's standing constraint (2026-09-05) is that `import nmd` pulls in
+  # nothing third-party. Until now that was verified once by hand and never
+  # pinned. This checks it on the artifact rather than the source tree, so it
+  # also catches pyproject.toml accidentally growing a dependency.
+  # ---------------------------------------------------------------------------
+  verify-minimal:
+    name: Verify the dependency-free install
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10" # the declared floor
+
+      - name: Build the wheel
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+          python -m build
+
+      - name: Install it alone, with none of the optional packages
+        run: |
+          python -m venv /tmp/bare
+          /tmp/bare/bin/pip install dist/*.whl
+          /tmp/bare/bin/python - <<'PY'
+          import importlib.util
+          import sys
+
+          optional = ('numpy', 'scipy', 'pyroaring', 'regex', 'numba')
+
+          # Fail loudly if the environment is not actually bare -- otherwise this
+          # whole job passes vacuously, which is worse than not having it.
+          for mod in optional:
+              assert importlib.util.find_spec(mod) is None, \
+                  f'{mod} is installed; this check would pass for the wrong reason'
+
+          import nmd
+          from nmd import ngram_movers_distance, WordList
+
+          leaked = [m for m in optional if m in sys.modules]
+          assert not leaked, f'importing nmd pulled in {leaked}'
+
+          assert 0.0 <= ngram_movers_distance('hello', 'yellow', normalize=True) <= 1.0
+          wl = WordList()
+          for w in ('hello', 'yellow', 'help', 'mellow'):
+              wl.add_word(w)
+          assert wl.lookup('helo'), 'WordList returned nothing'
+
+          print('dependency-free install OK; nmd', nmd.__version__)
+          PY
+
+  # ---------------------------------------------------------------------------
+  # STAGE 3: build once, prove it, attest it, ship it.
+  #
+  # Build/check/attest/publish are steps in ONE job on purpose: the bytes that
+  # get smoke-tested and attested are the exact bytes that get uploaded, and
+  # step ordering gates the upload without any needs: plumbing.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Publish to PyPI
+    needs: [ test, verify-minimal ]
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://pypi.org/p/nmd
+    permissions:
+      id-token: write     # OIDC, for trusted publishing and for attestation
+      contents: read
+      attestations: write # actions/attest-build-provenance
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+          python -m build
+
+      - name: Check the metadata
+        run: twine check dist/*
+
+      # Installing the built wheel clean is the only thing that catches packaging
+      # bugs -- a missing file in the wheel is invisible from the source tree,
+      # because the source tree still has it.
+      - name: Smoke-test the built wheel in a clean venv
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install dist/*.whl
+          /tmp/smoke/bin/python - <<'PY'
+          from nmd import ngram_movers_distance, WordList
+
+          assert ngram_movers_distance('hello', 'hello', normalize=True, invert=True) == 1.0
+          score = ngram_movers_distance('hello', 'yellow', normalize=True, invert=True)
+          assert 0.0 < score < 1.0, score
+
+          wl = WordList()
+          for w in ('hello', 'yellow', 'help', 'mellow'):
+              wl.add_word(w)
+          assert wl.lookup('helo'), 'WordList returned nothing'
+
+          print('wheel smoke test OK:', score)
+          PY
+
+      # PEP 740 attestations come from the publish step below (its `attestations`
+      # input defaults to true under trusted publishing). This is the separate
+      # GitHub-store provenance, verifiable with `gh attestation verify`, and it
+      # covers the sdist as well as the wheel.
+      - name: Generate build provenance for both artifacts
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'dist/*'
+
+      # Dry runs stop here. Everything above has already run.
+      - name: Publish to PyPI
+        if: github.ref_type == 'tag'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          attestations: true # PEP 740; the default, pinned explicitly since it is security-relevant
+
+      - name: Dry run summary
+        if: github.ref_type != 'tag'
+        run: echo "Dry run complete -- built, checked, smoke-tested and attested. Upload skipped." >> "$GITHUB_STEP_SUMMARY"

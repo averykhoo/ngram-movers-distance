@@ -7,7 +7,15 @@ name = "nmd"
 authors = [{ name = "Avery Khoo", email = "averykhoo@gmail.com" }]
 readme = "README.md"
 license = { file = "LICENSE" }
-classifiers = ["License :: OSI Approved :: MIT License"]
+requires-python = ">=3.10"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 dynamic = ["version", "description"]
 
 [project.urls]

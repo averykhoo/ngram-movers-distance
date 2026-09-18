@@ -1,6 +1,6 @@
 # Handoff
 
-State as of `master` on 2026-09-16. The open-item list below was triaged with the owner on
+State as of `master` on 2026-09-18. The open-item list below was triaged with the owner on
 2026-09-05; every item carries a decision. Items 23 and 24 were decided 2026-09-07; items 11
 and 23 were finished 2026-09-16.
 
@@ -21,7 +21,10 @@ refreshed.
    `n=(1,2)` wins every short-string task but is a poor index key, and this is the only item
    that would let V7 use it as one anyway. Real API surface work, not a probe.
 3. **Item 13 — bump `__version__`**, which is no longer hygiene. `0.0.6` is already on PyPI, so
-   the publish pipeline cannot succeed until it moves. See `docs/releasing.md`.
+   the publish pipeline cannot succeed until it moves. As of the 2026-09-18 hand dry run it is
+   the **only** thing known to be blocking a release: the build, the metadata, the
+   dependency-free install, the README examples and the 3.10 floor were all verified off a real
+   wheel. See `docs/releasing.md`.
 4. **Hygiene whenever convenient**: 12 (README todos), 27 (BEIR caveat, already written, no
    action needed), 28 (re-measure Part 10 timings on an idle machine before quoting them
    again).
@@ -128,6 +131,14 @@ installed but **nothing in `nmd/` imports it** — it was only used to evaluate 
 `v*` triggers `.github/workflows/publish-to-pypi.yml`, which never writes to the repository;
 the workflow is pushed and active on GitHub but **has never run**; and item 13 below blocks the
 first release.
+
+A **hand dry run on 2026-09-18** exercised everything the pipeline claims to check, off a real
+`python -m build` rather than the source tree — artifacts, metadata, a bare-python-3.10 install of
+the wheel, every README example, and the suite on the declared floor. All green; write-up in
+`docs/session-log.md`. Two tooling facts came out of it and are recorded in `docs/releasing.md`:
+`twine check` does **not** render a markdown description (metadata only), and `readme_renderer`
+rewrites `#anchor` links but not relative paths — which is why the README's three relative links
+became absolute in `0771414`.
 
 ## What changed recently
 
@@ -267,7 +278,9 @@ get fixed.
     blocker, not hygiene**: `0.0.6` is already on PyPI and PyPI refuses re-uploads, so the
     publish pipeline cannot succeed at this version. `validate-tag` checks this and stops in
     ~20s rather than at the upload. Still not bumped unprompted, since it is only meaningful at
-    release time. Procedure: `docs/releasing.md`.
+    release time — declined again on 2026-09-18, when the owner was asked to pick a number and
+    chose not to yet. Everything else on the release path is verified as of that date, so this is
+    the last thing standing between `master` and a tag. Procedure: `docs/releasing.md`.
 14. **The Part 7 finding has no corresponding code change.** `n=(1, 2)` beats the README's
     `(2, 4)` default by 11 points of hit@1 on typo correction, but unigrams have almost no
     selectivity as an index key. The suggested design — prune on 2- or 3-grams, rescore with

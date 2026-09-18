@@ -72,6 +72,22 @@ Published versions `0.0.1`–`0.0.6` all predate the pipeline and went out by ha
 pushed will be the first real exercise of it — a `workflow_dispatch` dry run first is worth the
 two minutes.
 
+**Hand dry run, 2026-09-18.** Everything the pipeline claims to check was checked locally first,
+off a real `python -m build` rather than off the source tree: `twine check --strict` green on both
+artifacts; METADATA carries no `Requires-Dist`, `Requires-Python: >=3.10` and a Summary resolved
+from the module docstring; the wheel installed alone into a bare python **3.10.21** env (the
+declared floor) leaks none of `numpy` / `scipy` / `pyroaring` / `regex` / `numba` on `import nmd`;
+every README code block runs against that installed wheel and reproduces its documented numbers;
+and the suite is green on 3.10 as well as the repo's 3.12. Write-up:
+`docs/session-log.md`, session 2026-09-18. This substitutes for none of the CI — it covers two of
+the seven matrix cells and cannot exercise trusted publishing — but it means a `workflow_dispatch`
+run is now expected to be the first thing that fails, if anything does.
+
+⚠ **`twine check` does not render a markdown description.** `twine/commands/check.py::_RENDERERS`
+maps `"text/markdown": None` with the comment "Rendering cannot fail", so on this package it
+validates metadata only, under `--strict` and regardless of installed backends. The workflow step
+is named "Check the metadata" and means it literally; nothing in the pipeline renders `README.md`.
+
 ## Archived: how this used to work (0.0.1 – 0.0.6)
 
 Verbatim from the old README section, for the record:

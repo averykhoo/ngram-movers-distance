@@ -6,6 +6,71 @@ decisions and negative results that still bind, and points back here for the rea
 
 ---
 
+## Session 2026-09-18: release dry run against a genuinely bare environment
+
+No scoring code changed. The publish pipeline has never run (see `docs/releasing.md`), so
+everything it claims to check was checked here by hand first, off a real build rather than off
+the source tree.
+
+**The artifacts build and the metadata is right.** `python -m build` (flit_core 3.12.0) produced
+`nmd-0.0.6-py3-none-any.whl` and `nmd-0.0.6.tar.gz`; `twine check --strict` passes both. METADATA
+carries **no `Requires-Dist` at all**, `Requires-Python: >=3.10`, `Description-Content-Type:
+text/markdown`, `License-File: LICENSE`, and a Summary lifted from the `nmd/__init__.py`
+docstring — i.e. `dynamic = ["version", "description"]` resolves the way `docs/releasing.md`
+describes.
+
+⚠ **The sdist ships the package and nothing else**: `nmd/*.py`, `pyproject.toml`, `README.md`,
+`LICENSE`, `PKG-INFO`. No `tests/`, no `docs/`, no `experiments/`. So the README's "# Testing →
+`pytest`" is a *repository* instruction, not something an sdist download can act on, and
+`docs/bow-plan.md` is only ever reachable over the network. That is flit's default behaviour and
+was left as is, but it is the reason the README links had to become absolute (below).
+
+**The dependency-free promise holds on the built wheel, not just the tree.** A throwaway conda
+env `nmd-release-test` at python **3.10.21** — the declared floor — holding only pip, setuptools,
+wheel and packaging, with `numpy` / `scipy` / `pyroaring` / `regex` / `numba` asserted absent
+before anything else ran. Installing the wheel alone: `import nmd` leaks none of the five into
+`sys.modules`, and `nmd.__all__` is exactly `('ngram_movers_distance', 'WordList')`.
+
+**The README's dependency table is accurate, checked by provoking the failures.** In that bare
+env each optional module raises `ImportError` naming a package its README row lists:
+`nmd_index_v7` → `numpy`, `nmd_bow` → `scipy`, `nmd_segments` → `numpy` (of `scipy`, `numpy`),
+`nmd_word_set` → `pyroaring` (of `pyroaring`, `regex`). Installing those four then makes every
+one of them work off the installed wheel.
+
+**Every README code block was run, and every number in them reproduces** (2026-09-18, against the
+installed 0.0.6 wheel, not the source tree): the four-word quickstart matches its commented output
+term for term; over `experiments/words_en.txt` `WordList.lookup('fotografer')[0]` is
+`('photographer', (9.9, 13.87))` and `lookup('beaurocracy')[0]` is `('bureaucracy', (11.73,
+17.45))`; `ApproxWordListV7.lookup('fotografer')[0]` is `('photographer', 0.437)`; the bow,
+segment and `WordSet` blocks all run. `experiments/readme_example_check.py` is green — nothing
+within Damerau-Levenshtein 2, 65 within 5.
+
+**The suite passes on the declared floor.** 1102 passed, 1 xfailed in 10.39s on python 3.10.21;
+the repo env is 3.12.14, so `>=3.10` had never actually been exercised. Still only two of the
+seven matrix cells the workflow declares.
+
+**Two facts about the tooling worth not rediscovering:**
+
+* ⚠ **`twine check` does not render a markdown description.**
+  `twine/commands/check.py::_RENDERERS` maps `"text/markdown": None` with the comment
+  "Rendering cannot fail", so for this package it validates *metadata only* — under `--strict`,
+  and regardless of whether a markdown backend is installed. The workflow step is named "Check
+  the metadata", which is accurate; do not read it as a README-rendering guard.
+* **`readme_renderer` rewrites `#anchor` links but not relative paths.**
+  `readme_renderer/markdown.py::_prefix_relative_links` only touches `href="#..."`, to match the
+  heading ids it prefixes — and `readme_renderer/clean.py` keeps ids (`"*": {"id"}`), so the
+  README's `[what this is good for](#what-this-is-good-for-and-what-it-is-not)` link **does** work
+  on PyPI. A relative *path* is left alone and resolves against `https://pypi.org/project/nmd/`.
+  Hence `0771414`: `docs/bow-plan.md` (×2) and `tests/README.md` now point at
+  `github.com/averykhoo/ngram-movers-distance/blob/master/...`, which works from both places.
+  The same commit dropped the `from nmd import nmd should return a function, not a module` todo —
+  there is no `nmd.nmd` submodule any more, so that import raises `ImportError` and the todo
+  describes a problem that no longer exists.
+
+**Still blocking a release: item 13.** `__version__` is still `'0.0.6'`, which is on PyPI. Left
+unbumped on purpose — the owner declined to pick a number in this session, and it is only
+meaningful at release time.
+
 ## Session 2026-09-16: item 11 and item 23 landed, and this file split off
 
 Documentation and hygiene only; no scoring code changed.

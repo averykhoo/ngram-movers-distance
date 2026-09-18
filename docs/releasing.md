@@ -71,7 +71,18 @@ fired because `pyproject.toml` changed.)
 
 ⚠ **That is no longer true of the repository as a whole.** `ci.yml` was added on 2026-09-18 and
 runs on every push to any branch, so the suite and the dependency-free check now execute off the
-release path. `publish-to-pypi.yml` is still the only thing that builds, attests or uploads, and
+release path. **It ran green on its first attempt** — run `35305903082`, commit `18672a7`,
+29s total: ubuntu/3.10 25s, ubuntu/3.14 23s, bare install 11s. `publish-to-pypi.yml` correctly did
+not fire.
+
+That first run matters for this file, because `ci.yml` and `publish-to-pypi.yml` **share two of
+the four workflows**. `template-test.yml` and `template-verify-minimal.yml` have now executed on
+real runners, so the reusable-workflow wiring, the dependency install and the bare-install
+assertion are proven rather than merely linted. What remains untested on the release path is
+therefore narrower than it was: the `validate-tag` guards (they need a real tag), the nine matrix
+cells outside ubuntu/3.10 and ubuntu/3.14, and the whole `deploy` job — build, `twine check`,
+clean-venv smoke test, attestation and the upload. A `workflow_dispatch` run covers everything in
+that list except `validate-tag` and the upload itself. `publish-to-pypi.yml` is still the only thing that builds, attests or uploads, and
 is still the only place the full 11-cell matrix runs — but "has this code ever been tested on
 linux" is now answered before release time rather than during it. Scope is documented in the
 header of `ci.yml`.

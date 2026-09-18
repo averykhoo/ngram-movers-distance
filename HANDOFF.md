@@ -133,6 +133,9 @@ that workflow is pushed and active on GitHub but **has never run**; and item 13 
 first release.
 
 **General CI exists as of 2026-09-18** — `.github/workflows/ci.yml`, on every push to any branch.
+It went green on its first run (`35305903082`, commit `18672a7`, 29s), which also means
+`template-test.yml` and `template-verify-minimal.yml` — **shared with the publish workflow** — are
+now proven on real runners rather than only linted.
 Deliberately a cheap subset of the release matrix: the suite on ubuntu/3.10 everywhere, plus
 ubuntu/3.14 and the dependency-free install check on `master` and PRs. The reasoning for those
 cells is in the file's header. The full 11-cell matrix stays on the release path.

@@ -109,6 +109,14 @@ is the platform nothing else covers. The full eleven-cell matrix still gates the
 the moment one drifts; `publish-to-pypi.yml` now calls the same file. Its script also gained an
 `__all__` assertion while being moved.
 
+**The first run was green**, which is worth recording because nothing in this repository had ever
+executed before: run `35305903082` on commit `18672a7`, 29s total — ubuntu/3.10 25s, ubuntu/3.14
+23s, bare install 11s — and `publish-to-pypi.yml` correctly did not fire. Confirmed first-hand via
+`gh run view` rather than taken from the watching subagent's report. The useful consequence is that
+`template-test.yml` and `template-verify-minimal.yml` are **shared with the publish workflow**, so
+two of its four files are now proven on real runners; what is left untested there is `validate-tag`
+(needs a tag), the nine other matrix cells, and the whole `deploy` job.
+
 **Workflow YAML cannot be run locally, so it was linted instead.** `actionlint` (via `actionlint-py`,
 which ships the binary — it installs as `Scripts/actionlint.exe`, not an importable module) is
 clean across all four workflows. Sabotage-checked rather than trusted: it catches an input the

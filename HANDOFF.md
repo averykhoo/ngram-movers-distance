@@ -135,7 +135,9 @@ first release.
 A **hand dry run on 2026-09-18** exercised everything the pipeline claims to check, off a real
 `python -m build` rather than the source tree — artifacts, metadata, a bare-python-3.10 install of
 the wheel, every README example, and the suite on the declared floor. All green; write-up in
-`docs/session-log.md`. Two tooling facts came out of it and are recorded in `docs/releasing.md`:
+`docs/session-log.md`. It is repeatable: **`docs/release-dry-run.md`** is the runbook and
+`experiments/release_check.py` is the script it drives. ⚠ The runbook creates two throwaway conda
+envs, `nmd-release-bare` and `nmd-release-full`; its step 6 deletes them and is not optional. Two tooling facts came out of it and are recorded in `docs/releasing.md`:
 `twine check` does **not** render a markdown description (metadata only), and `readme_renderer`
 rewrites `#anchor` links but not relative paths — which is why the README's three relative links
 became absolute in `0771414`.

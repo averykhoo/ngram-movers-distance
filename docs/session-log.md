@@ -67,6 +67,27 @@ seven matrix cells the workflow declares.
   there is no `nmd.nmd` submodule any more, so that import raises `ImportError` and the todo
   describes a problem that no longer exists.
 
+**It is a runbook now, not a one-off.** The checks first lived only in `.scratch/`, which is the
+documented way to lose them; they are tracked as **`experiments/release_check.py`** with
+**`docs/release-dry-run.md`** as the runbook. Two modes, because they need contradictory
+environments — `bare` asserts numpy / scipy / pyroaring / regex are absent, `full` that they are
+present — so the runbook builds two throwaway conda envs (`nmd-release-bare`, `nmd-release-full`)
+and runs them in parallel. Both were deleted at the end of this session, and step 6 of the runbook
+says to do that.
+
+Three properties are worth keeping if that script is ever edited. It **refuses to run against the
+source tree** (`import nmd` must resolve outside the repo), since a file missing from the wheel is
+invisible from a tree that still has it. It **asserts its environment before it checks anything**,
+so `bare` cannot pass vacuously in an env that happens to have numpy. And every expected number is
+also **grepped for as a literal in README.md**, so editing the README without re-measuring goes red
+rather than quietly diverging.
+
+Sabotage-checked rather than just run green: perturbing the expected V7 score `0.437` → `0.438`
+fails the measurement; deleting `regex` from the README's `nmd_word_set` dependency row fails the
+README pin while the import check stays green — which is exactly the drift that pin exists for; and
+running `bare` in the full env fails the environment assertion. Run with no wheel installed it
+fails `nmd is importable` and stops instead of falling back to the tree.
+
 **Still blocking a release: item 13.** `__version__` is still `'0.0.6'`, which is on PyPI. Left
 unbumped on purpose — the owner declined to pick a number in this session, and it is only
 meaningful at release time.

@@ -37,7 +37,9 @@ tag, no GitHub Release. **The tag you push is the only source of truth.**
    `twine check`, clean-venv smoke test, provenance, publish. Build through publish are steps in
    one job, so the bytes that are smoke-tested and attested are the bytes that are uploaded.
 
-`workflow_dispatch` runs everything *except* the upload, as a repeatable dry run.
+`workflow_dispatch` runs everything *except* the upload, as a repeatable dry run. To check the
+same things locally first, off a real build rather than off the source tree, follow
+`docs/release-dry-run.md` — it is ~10 minutes and it is repeatable.
 
 ## What the guards catch, before anything irreversible happens
 
@@ -78,7 +80,8 @@ artifacts; METADATA carries no `Requires-Dist`, `Requires-Python: >=3.10` and a 
 from the module docstring; the wheel installed alone into a bare python **3.10.21** env (the
 declared floor) leaks none of `numpy` / `scipy` / `pyroaring` / `regex` / `numba` on `import nmd`;
 every README code block runs against that installed wheel and reproduces its documented numbers;
-and the suite is green on 3.10 as well as the repo's 3.12. Write-up:
+and the suite is green on 3.10 as well as the repo's 3.12. It is now a runbook rather than a
+one-off — `docs/release-dry-run.md`, driving `experiments/release_check.py`. Write-up:
 `docs/session-log.md`, session 2026-09-18. This substitutes for none of the CI — it covers two of
 the seven matrix cells and cannot exercise trusted publishing — but it means a `workflow_dispatch`
 run is now expected to be the first thing that fails, if anything does.

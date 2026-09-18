@@ -1,6 +1,11 @@
 # Handoff
 
-State as of `master` on 2026-09-18. The open-item list below was triaged with the owner on
+State as of `master` on 2026-09-18, after the pre-release review. `__version__` is **0.1.0**
+and the tree is believed tag-ready; nothing has been tagged or pushed. Three shipped bugs and
+the release command itself were fixed that session — see the *later* 2026-09-18 entry in
+`docs/session-log.md`, which is also where the reasoning for 0.1.0 over 0.0.7 lives.
+
+The open-item list below was triaged with the owner on
 2026-09-05; every item carries a decision. Items 23 and 24 were decided 2026-09-07; items 11
 and 23 were finished 2026-09-16.
 
@@ -20,14 +25,13 @@ refreshed.
 2. **Items 14/20 — prune-then-rescore (`rescore_n`).** The highest-value remaining code change:
    `n=(1,2)` wins every short-string task but is a poor index key, and this is the only item
    that would let V7 use it as one anyway. Real API surface work, not a probe.
-3. **Item 13 — bump `__version__`**, which is no longer hygiene. `0.0.6` is already on PyPI, so
-   the publish pipeline cannot succeed until it moves. As of the 2026-09-18 hand dry run it is
-   the **only** thing known to be blocking a release: the build, the metadata, the
-   dependency-free install, the README examples and the 3.10 floor were all verified off a real
-   wheel. See `docs/releasing.md`.
-4. **Hygiene whenever convenient**: 12 (README todos), 27 (BEIR caveat, already written, no
-   action needed), 28 (re-measure Part 10 timings on an idle machine before quoting them
-   again).
+3. **Release, when asked.** Item 13 is closed: `__version__` is `0.1.0`, the gate is green, and
+   the tag command in `docs/releasing.md` has been corrected (the old one did not push the
+   tag at all). Nothing is known to be blocking. A `workflow_dispatch` dry run first is still
+   worth the two minutes — the pipeline has never run.
+4. **Hygiene whenever convenient**: 27 (BEIR caveat, already written, no action needed), 28
+   (re-measure Part 10 timings on an idle machine before quoting them again), 30-33 (the
+   pre-release review findings that were not blockers).
 5. **Low priority / speculative, only if someone is already deep in this code**: 26 (mix
    normalization knob) and 29 (real WAND) -- both are documented well enough to pick up cold,
    neither is blocking anything else.
@@ -119,7 +123,7 @@ Conda env named after the repo folder:
 
 ```bash
 "C:/Users/user/anaconda3/envs/ngram-movers-distance/python.exe" -m pytest -q
-# 1102 passed, 1 xfailed in 7.96s (re-measured 2026-09-16)
+# 1180 passed, 1 xfailed in 7.97s (re-measured 2026-09-18)
 ```
 
 Installed and used: `numpy` 2.2.4, `scipy` 1.15.2, `pyroaring`, `regex`. `numba` 0.61.2 is
@@ -281,10 +285,22 @@ get fixed.
     and is not dead: `tests/test_emd_correctness.py` imports it as an oracle, and
     `experiments/emd_variants_bench.py` still excludes it deliberately as dominated by
     `emd_1d_hybrid`. Gate after the deletion: 1102 passed, 1 xfailed (2026-09-16), unchanged.
-12. Pre-existing README todos, untouched: `remove()`/`discard()` on the V7 index (needs index
-    compaction; `WordSet` already has them), prefix lookup, a `min_similarity` filter on
-    lookup, trying cython, and `from nmd import nmd` returning a module rather than a function.
-13. **`__version__` is `0.0.6` and has not been bumped** for anything since. ⚠ **Now a hard
+12. **The README `# todo` section was deleted on 2026-09-18** — it was on the PyPI long
+    description, listed two things that had since shipped, and pasted CPython's
+    `difflib.real_quick_ratio` unattributed. This row is now the list. Still open, none
+    started: `remove()`/`discard()` on the V7 index (needs index compaction; `WordSet`
+    already has them), prefix lookup, a `min_similarity` filter on `WordList.lookup`
+    (`WordSet.find_similar` has one), trying cython, `from nmd import nmd` returning a module
+    rather than a function, renaming `nmd_bow` (it is a token sequence, not a bag of words),
+    a `real_quick_ratio`-style length bound (needs a cutoff to pay for itself), and
+    documenting where the algorithm breaks down (long strings, very unequal lengths).
+13. **Closed 2026-09-18: `__version__` is `0.1.0`.** Bumped as part of the pre-release review,
+    with the owner asking for the release and choosing between 0.0.7 and 0.1.0; the reasoning
+    for a minor rather than a patch bump (0.0.6 shipped V5 as `WordList`, the tree ships V6
+    with a different return shape) is in the later 2026-09-18 session-log entry. Committed on
+    `master`, **not tagged and not pushed**. Original note follows.
+
+    ~~**`__version__` is `0.0.6` and has not been bumped**~~ for anything since. ⚠ **Now a hard
     blocker, not hygiene**: `0.0.6` is already on PyPI and PyPI refuses re-uploads, so the
     publish pipeline cannot succeed at this version. `validate-tag` checks this and stops in
     ~20s rather than at the upload. Still not bumped unprompted, since it is only meaningful at
@@ -378,6 +394,53 @@ get fixed.
     fits in cache and the numpy pass is ~1 ms, so WAND cannot win there), and the pivot walk
     has to be compiled, which the dependency-free constraint makes a V8-shaped project rather
     than a V7 patch. **A python-loop prototype proves nothing and should not be built.**
+
+### Found by the 2026-09-18 pre-release review, deliberately not fixed
+
+None of these is reachable from `import nmd`, and none changes a score on a documented default,
+which is why they did not block 0.1.0. Each was reproduced by hand, not just reported.
+
+30. **Unvalidated `dim` on both indexes.** `ApproxWordListV6.lookup(dim=0)` and
+    `ApproxWordListV7.lookup(dim=0)` both raise `ZeroDivisionError` from the generalized mean's
+    `1/dim`; `dim=-1` returns a number and emits a numpy `RuntimeWarning` on V7. Every other
+    parameter on V7's signature is type- and range-checked, so this is the one gap. `dim` is also
+    not documented as needing to be positive.
+
+31. **`nmd_bow` is looser than `nmd_core` about its inputs, in three ways.** Its signature says
+    `Union[str, Iterable[str]]` and the body does `list(...)`, so passing a bare string compares
+    *characters* as words and returns a plausible number (`bow('hello', 'hello world')` is 6.0)
+    — the hint invites the mistake and the docstring says "a list of strings". It also does not
+    validate `n` at all, where `ngram_movers_distance` raises for `n < 1`. And it pads at `n == 1`
+    where `nmd_core` deliberately drops the markers, so the two disagree at that n
+    (`bow(['ab'], ['ba'], n=1, invert=True, normalize=True)` is 0.917 against nmd's 0.5), while
+    `_similarity`'s docstring claims it is "identical to the similarity loop in
+    `ngram_movers_distance`". Either the padding or the claim has to go.
+
+32. **`nmd_segments` reports a solver failure with a bare `assert`**, so `python -O` strips it and
+    `result.x` is then used unchecked. Its `lam` / `mu` / `min_sim` are unvalidated too: a negative
+    `lam` breaks the documented `similarity + distance == total` bound (measured 2.25 for a
+    normalized similarity), and `n=()` raises an opaque `ZeroDivisionError`.
+
+33. **`emd_1d.emd_1d_hybrid` is 230 lines the package never calls, and it disagrees with
+    `emd_1d_dp` off-domain.** Nothing in `nmd/` imports it. It omits the cap at 2, so
+    `emd_1d_hybrid([0], [10])` is 10.0 where the dp says 2.0 (reproduced 2026-09-18). That is
+    only safe inside nmd's [0, 1] positions, and neither `emd_1d_dp` nor `emd_1d_fast`
+    documents that domain restriction anywhere.
+
+    ⚠ **It is not dead, so do not just delete it.** `tests/test_emd_correctness.py:114` asserts
+    it equals the dp on every case it generates — which passes precisely because those cases are
+    in-domain — and `experiments/emd_variants_bench.py` benchmarks it as the interesting variant.
+    `emd_1d_old` has the same uncapped semantics and is the oracle in that same file. Moving
+    `_hybrid` to `experiments/` means moving that assertion too; the cheaper fix is to document
+    the [0, 1] domain on all four functions and leave the code alone.
+
+    Smaller, same review, not worth their own rows: the optional modules raise a bare
+    `ModuleNotFoundError` rather than naming the package to install (deliberate, but a 3-line
+    `raise ... from None` would be kinder); there is **no CHANGELOG** anywhere in the repo and
+    `[project.urls]` has only `Home`, no `Repository` / `Issues`; `pyproject.toml` carries no
+    `keywords` and no `Development Status` / `Topic` classifiers; and `LICENSE` still reads
+    "Copyright (c) 2022".
+
 
 ## Things worth knowing before optimizing further
 

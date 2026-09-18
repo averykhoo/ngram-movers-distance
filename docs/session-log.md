@@ -6,6 +6,80 @@ decisions and negative results that still bind, and points back here for the rea
 
 ---
 
+## Session 2026-09-18 (later): pre-release review, three real bugs, and 0.1.0
+
+The whole tree was reviewed against a release, module by module. Three things were wrong in
+shipped code, and the documented release command did not release. All are fixed here; the gate
+is **1180 passed, 1 xfailed** (was 1102 + 1 -- the 78 new tests are the two regressions below).
+
+**⚠ `ngram_movers_distance` returned negative distances, and called identical strings maximally
+different.** `num_grams_1 = len(word_1) - n + 1` was never clamped, so a word of fewer than
+`n - 3` characters produced a *negative* count on both sides. That sails past the
+`num_grams_1 + num_grams_2 == 0` fallback, so `nmd('a', 'a', n=5)` was `-2` raw and **1.0
+normalized** -- a word maximally far from itself. A sweep of n=1..9 over words of length 0-5
+found **81 violations** of the four properties the metric advertises (non-negative, normalized
+in [0, 1], `distance + similarity == 1`, identical implies 0); it is 0 now. `nmd_index.num_n_grams`
+had always clamped, which is why the shipped `WordList` never showed this. The existing
+parametrization stopped at n=4, exactly one short of where the shortest word breaks.
+
+**`nmd_bow` had the same unclamped count**, reached through `_n_gram_locations`, so
+`bow(['ab'], ['ab'], n=6)` was `1.0`: two identical words at maximum distance.
+
+Both fixes are one `max(0, ...)`. Both are pinned, and **sabotage-checked**: reverting the two
+clamps turns 37 of the new tests red, and restoring them turns all 78 green.
+
+**⚠ `WordSet` advertised `MutableSet` and raised on every binary operator.** `a | b`, `a & b`,
+`a - b`, `a ^ b` all died with `TypeError: __init__() takes 1 positional argument but 2 were
+given`, because `collections.abc.Set` builds results with `cls(iterable)` and this `__init__` is
+keyword-only. Fixed with `_from_iterable`, deliberately an **instance** method rather than the
+classmethod the abc docs describe: a classmethod cannot see the configuration, so `a | b` would
+silently come back with default n-gram sizes and case folding and then score differently from
+both operands. Verified that the left operand's config is carried, case sensitivity included.
+
+**⚠ The documented release command never fires the workflow.** `docs/releasing.md`, `CLAUDE.md`
+and the workflow header all said `git tag "v$VERSION" && git push --follow-tags`. `git tag`
+without `-a` makes a **lightweight** tag and `--follow-tags` pushes **annotated** tags only, so
+that line pushes the branch and leaves the tag on the laptop -- and it fails by looking like it
+worked, because the push succeeds and says nothing about the tag. Confirmed both ways with
+`git push --dry-run --follow-tags`: a lightweight tag lists the branch alone, an annotated one
+lists both. Now `git tag -a ... && git push origin master "v$VERSION"`, in all three places.
+
+**`nmd_word_set.py` no longer ships a benchmark.** Its `__main__` block opened
+`../experiments/words_en.txt` -- a path relative to the cwd, to a file that is not in the wheel --
+and was the only reason the module imported `time` and the frozen, bug-carrying `ApproxWordListV5`.
+
+**README, which is the PyPI long description.** Removed the `# todo` section outright: it listed
+two things that have since shipped (`WordSet`'s set-like container, `find_similar`'s
+`min_similarity`) and pasted CPython's `difflib.real_quick_ratio` unattributed. The surviving
+items are item 12 on the board. Three factual corrections: V7 was described as pruning with a
+two-sided count bound, which was **deleted on 2026-09-06**; `WordList` was said to raise
+`ZeroDivisionError` on short queries, **fixed 2026-09-05** and contradicted 78 lines later; and an
+`invert=False` bullet described V5 under a V6 heading, where V6 has no `invert` parameter at all.
+The one relative link became absolute, since PyPI's renderer emits no heading ids.
+
+**The V6-vs-V7 table had no date and no script**, and nothing in the tree regenerated its numbers
+-- the exact thing `CLAUDE.md` forbids. `experiments/v6_vs_v7_bench.py` is new and regenerates it;
+the table is re-measured 2026-09-18. Index size is an object-graph walk cut down from
+`experiments/sizeof.py::deep_sizeof`, **not** process RSS: RSS never shrinks on free, so it would
+charge V7 for the dicts it builds and discards in `_freeze`, which is the whole point of the class
+(measured: RSS says 3-4x, the object graph says 9-10x). ⚠ Two traps found while writing it, both
+now enforced by the script's ordering and noted in its docstring: sizing **before** timing moves
+the lookup numbers by more than 2x, because the walk leaves the heap fragmented; and V6's lookup
+column swings 214-325 ms run to run on this shared laptop, so the speed ratio is quoted as
+"more than 10x" rather than to three digits. The sizes are deterministic and reproduced exactly
+across runs.
+
+**Version is `0.1.0`, not `0.0.7`.** `0.0.6` shipped `WordList = ApproxWordListV5`, whose
+`lookup()` returned three-tuples with negative distances sorted worst-first and `top_k * 2`
+results; the tree ships V6, returning two-tuples correctly ordered. `nmd/nmd.py` was also renamed
+to `nmd_core.py`, a `>=3.10` floor was added, and four modules are new. That is breaking plus
+additive, which under 0.x is a minor bump. Not 1.0: there is still no changelog.
+
+**Not fixed, deliberately** -- new board items 30-33. None of them is reachable from
+`import nmd`, and none changes a score on a documented default.
+
+---
+
 ## Session 2026-09-18: release dry run against a genuinely bare environment
 
 No scoring code changed. The publish pipeline has never run (see `docs/releasing.md`), so

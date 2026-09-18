@@ -259,7 +259,7 @@ print(bow_ngram_movers_distance(bag_of_words_1=text_1.casefold().split(),
 * WARNING: requires `scipy.optimize` and `numpy`, so it's not available by default in the `nmd` namespace
 * like `bow_ngram_movers_distance` but tolerant of split / merged words (`["pineapple"]` matches `["pine", "apple"]`
   perfectly) and optionally preferring in-order matches. reference implementation, not optimized.
-* see [docs/bow-plan.md](docs/bow-plan.md) for the design and an evaluation on product names
+* see [docs/bow-plan.md](https://github.com/averykhoo/ngram-movers-distance/blob/master/docs/bow-plan.md) for the design and an evaluation on product names
 
 ```python
 from nmd.nmd_segments import align_segments, explain_alignment, segment_movers_distance
@@ -280,7 +280,7 @@ The project includes a test suite using pytest. To run the tests:
 pytest
 ```
 
-For more details about the tests, see the [tests/README.md](tests/README.md) file.
+For more details about the tests, see the [tests/README.md](https://github.com/averykhoo/ngram-movers-distance/blob/master/tests/README.md) file.
 
 # known bugs in the older index classes
 
@@ -317,7 +317,6 @@ neither fix changes any score on the documented `n=(2, 4)` default, where `num_g
 
 # todo
 
-* `from nmd import nmd` should return a function, not a module -> refactor this
 * try out cython 3? maybe in pure python mode
 * todo: try [this paper's algo](https://www.aclweb.org/anthology/C10-1096.pdf)
     * which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
@@ -326,7 +325,7 @@ neither fix changes any score on the documented `n=(2, 4)` default, where `num_g
     * matching long strings with many n-grams
     * matching strings with significantly different lengths
 * rename nmd_bow because it isn't really a bag-of-words, it's a token sequence
-* index for nmd_bow, and split/merge-tolerant token matching: see [docs/bow-plan.md](docs/bow-plan.md)
+* index for nmd_bow, and split/merge-tolerant token matching: see [docs/bow-plan.md](https://github.com/averykhoo/ngram-movers-distance/blob/master/docs/bow-plan.md)
 * consider a `real_quick_ratio`-like optimization, or maybe calculate length bounds?
     * needs a cutoff to actually speed up though, makes a huge difference for difflib
     * a sufficiently low cutoff is not unreasonable, although the default of 0.6 might be a little high for nmd

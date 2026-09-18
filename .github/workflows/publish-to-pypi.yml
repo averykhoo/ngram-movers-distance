@@ -3,7 +3,10 @@ name: Publish to PyPI
 # Tag-triggered. To release:
 #
 #     # bump __version__ in nmd/__init__.py first, and commit it
-#     git tag v0.0.7 && git push --follow-tags
+#     git tag -a v0.1.0 -m v0.1.0 && git push origin master v0.1.0
+#
+# Push the tag by name: --follow-tags pushes annotated tags only, so a lightweight
+# `git tag v0.1.0` would stay on the laptop and this workflow would never fire.
 #
 # workflow_dispatch runs everything EXCEPT the upload, as a repeatable dry run.
 # Nothing here ever writes to the repository: no version bump, no commit, no tag,

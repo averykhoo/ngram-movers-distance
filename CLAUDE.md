@@ -8,7 +8,7 @@ next, in full.
 
 ```bash
 "C:/Users/user/anaconda3/envs/ngram-movers-distance/python.exe" -m pytest -q
-# 1102 passed, 1 xfailed (2026-09-18)
+# 1180 passed, 1 xfailed (2026-09-18)
 ```
 
 Green before every push, no exceptions. If it is red, say what is red and leave it.
@@ -53,11 +53,13 @@ spent the moment the upload lands.
 1. **Bump `__version__` in `nmd/__init__.py`** and commit it on `master`. flit reads
    the version from that literal; it cannot be dropped, and injecting it from the tag
    would mean the published bytes are not the bytes at the tagged commit.
-2. **Tag from the file**, so the two cannot disagree, and push. `test -n` matters:
-   without it a failed read tags `v`, which matches the `v*` trigger.
+2. **Tag from the file**, so the two cannot disagree, and push the tag *by name*.
+   `test -n` matters: without it a failed read tags `v`, which matches the `v*` trigger.
+   `-a` matters too: `--follow-tags` pushes annotated tags only, so a lightweight tag
+   stays on the laptop and the workflow never fires. See `docs/releasing.md`.
    ```bash
    VERSION=$(sed -n "s/^__version__ = '\(.*\)'/\1/p" nmd/__init__.py)
-   test -n "$VERSION" && git tag "v$VERSION" && git push --follow-tags
+   test -n "$VERSION" && git tag -a "v$VERSION" -m "v$VERSION" && git push origin master "v$VERSION"
    ```
 3. `workflow_dispatch` runs everything **except** the upload, as a repeatable dry
    run. Worth doing first: the pipeline has never actually run.

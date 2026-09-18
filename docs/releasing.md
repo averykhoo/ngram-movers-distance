@@ -24,7 +24,7 @@ tag, no GitHub Release. **The tag you push is the only source of truth.**
 
    ```bash
    VERSION=$(sed -n "s/^__version__ = '\(.*\)'/\1/p" nmd/__init__.py)
-   test -n "$VERSION" && git tag "v$VERSION" && git push --follow-tags
+   test -n "$VERSION" && git tag -a "v$VERSION" -m "v$VERSION" && git push origin master "v$VERSION"
    ```
 
    `sed` rather than `grep -oP`: Git Bash on this machine runs with `LANG` unset, where
@@ -32,6 +32,14 @@ tag, no GitHub Release. **The tag you push is the only source of truth.**
    in a `git tag "v$(...)"` one-liner silently creates a tag named `v`, and `v` matches the
    `v*` trigger. The `test -n` guard is what stops that; the workflow's own copy of the read
    runs on ubuntu and already checks for an empty result.
+
+   ⚠ `-a`, and pushing the tag by name, are both load-bearing — this line got them wrong
+   until 2026-09-18. `git tag` without `-a` creates a **lightweight** tag, and
+   `git push --follow-tags` pushes *annotated* tags only, so the old form pushed the
+   branch, silently left the tag on the laptop, and this workflow never fired. It fails
+   by looking like it worked: the push succeeds and says nothing about the tag. Verified
+   2026-09-18 with `git push --dry-run --follow-tags`, which lists the branch alone for a
+   lightweight tag and the branch plus the tag for an annotated one.
 
 3. **Watch the run.** Stages: validate → test matrix + dependency-free install check → build,
    `twine check`, clean-venv smoke test, provenance, publish. Build through publish are steps in

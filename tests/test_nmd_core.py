@@ -1,3 +1,5 @@
+import itertools
+
 import pytest
 
 from nmd.nmd_core import ngram_movers_distance
@@ -68,3 +70,37 @@ def test_normalized_output_is_in_range(n):
         assert 0.0 <= distance <= 1.0, (a, b, n)
         assert 0.0 <= similarity <= 1.0, (a, b, n)
         assert distance + similarity == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize('n', range(1, 10))
+@pytest.mark.parametrize('word', ['', 'a', 'ab', 'abc', 'hello'])
+def test_a_word_is_identical_to_itself_at_every_n(word, n):
+    """
+    a word too short to contain one n-gram has no n-grams, not a negative number of them.
+
+    the counts used to be `len(word) - n + 1` with no clamp, so a word of fewer than n - 3
+    characters produced a negative count on both sides. that skipped the
+    `num_grams_1 + num_grams_2 == 0` fallback, and the normalized distance of a word against
+    *itself* came back as 1.0 -- maximally far apart. the existing parametrization stopped at
+    n=4, which is exactly one short of where the shortest word breaks. fixed 2026-09-18.
+    """
+    assert ngram_movers_distance(word, word, n=n) == pytest.approx(0.0)
+    assert ngram_movers_distance(word, word, n=n, normalize=True) == pytest.approx(0.0)
+    assert ngram_movers_distance(word, word, n=n, invert=True, normalize=True) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize('n', range(1, 10))
+def test_distance_stays_non_negative_and_normalized_stays_in_range(n):
+    """the metric's headline guarantees, swept over the short words that used to break them"""
+    words = ['', 'a', 'ab', 'abc', 'abcd', 'hello', 'yellow']
+    for word_1, word_2 in itertools.product(words, repeat=2):
+        distance = ngram_movers_distance(word_1, word_2, n=n)
+        similarity = ngram_movers_distance(word_1, word_2, n=n, invert=True)
+        assert distance >= 0.0, (word_1, word_2, n)
+        assert similarity >= 0.0, (word_1, word_2, n)
+
+        normalized_distance = ngram_movers_distance(word_1, word_2, n=n, normalize=True)
+        normalized_similarity = ngram_movers_distance(word_1, word_2, n=n, invert=True, normalize=True)
+        assert 0.0 <= normalized_distance <= 1.0, (word_1, word_2, n)
+        assert 0.0 <= normalized_similarity <= 1.0, (word_1, word_2, n)
+        assert normalized_distance + normalized_similarity == pytest.approx(1.0), (word_1, word_2, n)

@@ -50,9 +50,13 @@ def ngram_movers_distance(word_1: str,
         word_1 = f'\2{word_1}\3'
         word_2 = f'\2{word_2}\3'
 
-    # number of n-grams per word
-    num_grams_1 = len(word_1) - n + 1
-    num_grams_2 = len(word_2) - n + 1
+    # number of n-grams per word, clamped at zero: a word too short to contain a single
+    # n-gram has none of them, not a negative number of them. without the clamp the counts
+    # go negative, which sails past the `num_grams_1 + num_grams_2 == 0` fallback below and
+    # makes this function return a negative distance -- and, once normalized, report two
+    # identical strings as maximally far apart. `nmd_index.num_n_grams` has always clamped
+    num_grams_1 = max(0, len(word_1) - n + 1)
+    num_grams_2 = max(0, len(word_2) - n + 1)
 
     # generate n_gram indices and index their locations
     n_gram_locations_1 = dict()
@@ -78,8 +82,8 @@ def ngram_movers_distance(word_1: str,
     # return similarity or distance, optionally normalized
     output = similarity if invert else num_grams_1 + num_grams_2 - similarity
     if normalize:
-        # two words can have no n-grams at all between them (both empty at n == 1, or both exactly
-        # n - 2 characters long for larger n), which used to raise ZeroDivisionError. there is no
+        # two words can have no n-grams at all between them (both empty at n == 1, or both at
+        # most n - 3 characters long for larger n), which used to raise ZeroDivisionError. there is no
         # n-gram evidence either way, so fall back to comparing the strings -- which is exactly what
         # the callers of this function already did with the exception they caught, e.g.
         # `int(word_1 != word_2)` in nmd_bow.bow_ngram_movers_distance

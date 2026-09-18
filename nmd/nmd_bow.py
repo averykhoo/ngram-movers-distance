@@ -17,7 +17,10 @@ def _n_gram_locations(word: str, n: int) -> Tuple[Dict[str, List[float]], int]:
     here so that a word's n-grams can be built once and reused across a whole matrix row
     """
     padded = f'\2{word}\3'
-    num_grams = len(padded) - n + 1
+    # clamped for the same reason as in `nmd_core`: a negative count skips the caller's
+    # `total_grams == 0` branch, which then scores two identical words as maximally
+    # distant as soon as n exceeds their length by enough
+    num_grams = max(0, len(padded) - n + 1)
     denominator = max(1, num_grams - 1)
     locations: Dict[str, List[float]] = dict()
     for idx in range(num_grams):

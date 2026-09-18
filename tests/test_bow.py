@@ -187,3 +187,17 @@ class TestBowSemantics:
         """the README warns this does not merge or split words"""
         assert bow_ngram_movers_distance(['pineapple'], ['pine', 'apple'],
                                          invert=True, normalize=True) < 0.6
+
+
+@pytest.mark.parametrize('n', range(2, 10))
+@pytest.mark.parametrize('word', ['a', 'ab', 'abc'])
+def test_identical_bags_score_zero_at_every_n(word, n):
+    """
+    `_n_gram_locations` returned an unclamped n-gram count, so once n exceeded the word
+    length by enough the count went negative, the per-cell `total_grams == 0` branch was
+    skipped, and two identical words scored a normalized distance of 1.0. fixed 2026-09-18.
+    """
+    assert bow_ngram_movers_distance([word], [word], n=n) == pytest.approx(0.0)
+    assert bow_ngram_movers_distance([word], [word], n=n, normalize=True) == pytest.approx(0.0)
+    assert bow_ngram_movers_distance([word], [word], n=n,
+                                     invert=True, normalize=True) == pytest.approx(1.0)

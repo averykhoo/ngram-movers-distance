@@ -2,7 +2,6 @@
 split into a separate file because this needs `pyroaring` and `regex`
 """
 import math
-import time
 from collections import defaultdict
 from collections.abc import MutableSet
 from functools import partial
@@ -22,7 +21,6 @@ import unicodedata
 from pyroaring import BitMap
 
 from nmd.emd_1d import emd_1d_dp
-from nmd.nmd_index import ApproxWordListV5
 
 # BitMap=set  # this works for testing without pyroaring
 
@@ -84,8 +82,9 @@ class WordSet(MutableSet[str]):
             unicode_normalizer: Function to standardize Unicode characters before
                comparison. Defaults to NFC normalization (most common).
                Provide `None` to disable normalization. Other options include
-               `nmd.normalize_nfkc` (more aggressive) or
-               `nmd.normalize_nfd_strip_marks` (ignores accents), or a custom function.
+               `nmd.nmd_word_set.normalize_nfkc` (more aggressive) or
+               `nmd.nmd_word_set.normalize_nfd_strip_marks` (ignores accents), or a
+               custom function.
             ngram_sizes: Size(s) of character sequences (n-grams) to compare.
                Smaller values (e.g., 2) focus on local similarity/typos.
                Larger values (e.g., 4) focus on word structure.
@@ -99,7 +98,7 @@ class WordSet(MutableSet[str]):
                - with the filter disabled every word is scored, so completely dissimilar
                  words come back with a score of 0.0 instead of being omitted
             idf_exponent: Weight each n-gram by `idf(gram) ** idf_exponent`, where
-               `idf(gram) = log(len(self) / document_frequency(gram))`. Rare n-grams then
+               `idf(gram) = log((len(self) + 1) / document_frequency(gram))`. Rare n-grams then
                count for more than common ones. Defaults to 0.0, which makes every weight
                exactly 1.0 and reproduces the unweighted score bit-for-bit.
 
@@ -232,6 +231,29 @@ class WordSet(MutableSet[str]):
         return info
 
     # --- Set Methods (MutableSet Implementation) ---
+
+    def _from_iterable(self, iterable: Iterable[str]) -> 'WordSet':
+        """
+        Builds a new WordSet, carrying this one's configuration, from an iterable.
+
+        `collections.abc.Set` implements `|`, `&`, `-` and `^` by calling
+        `self._from_iterable(...)`, whose default implementation is `cls(iterable)`.
+        `__init__` here is keyword-only and takes no iterable, so that default raised
+        TypeError and every binary set operator was unusable on this class.
+
+        Deliberately an instance method rather than the classmethod the abc docs
+        describe: a classmethod cannot see the configuration, so `a | b` would come back
+        with the default n-gram sizes and case folding no matter what `a` was built with,
+        and would then score differently from both operands. The left operand's
+        configuration wins, which is the usual convention for set operators.
+        """
+        result = WordSet(case_sensitive=self._case_sensitive,
+                         unicode_normalizer=self._unicode_normalizer,
+                         ngram_sizes=self._n_list,
+                         idf_exponent=self._idf_exponent)
+        for word in iterable:
+            result.add(word)
+        return result
 
     def add(self, word: str) -> None:
         """
@@ -644,36 +666,3 @@ class WordSet(MutableSet[str]):
 
 
 MutableSet.register(WordSet)
-
-if __name__ == '__main__':
-    ws = WordSet()
-    ws.add('asdf')
-    print(ws)
-
-    with open('../experiments/words_en.txt', encoding='utf8') as f:
-        # with open('british-english-insane.txt', encoding='utf8') as f:
-        words = set(f.read().split())
-
-    t = time.perf_counter()
-    for word in words:
-        ws.add(word)
-    print('WordSet', time.perf_counter() - t)
-    print(ws)
-
-    wl = ApproxWordListV5()
-    t = time.perf_counter()
-    for word in words:
-        wl.add_word(word)
-    print('ApproxWordListV5', time.perf_counter() - t)
-
-    t = time.perf_counter()
-    for _ in range(100):
-        res = ws.find_similar('bananananaanananananana')
-    print('WordSet', time.perf_counter() - t)
-    print(res)
-
-    t = time.perf_counter()
-    for _ in range(100):
-        res = wl.lookup('bananananaanananananana', normalize=True)
-    print('ApproxWordListV5', time.perf_counter() - t)
-    print(res)

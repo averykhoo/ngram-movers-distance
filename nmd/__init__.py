@@ -2,7 +2,7 @@
 A string similarity measure based on the Earth Mover's Distance
 """
 
-__version__ = '0.0.6'
+__version__ = '0.1.0'
 
 from nmd.nmd_core import ngram_movers_distance
 from nmd.nmd_index import WordList

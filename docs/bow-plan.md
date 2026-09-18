@@ -63,7 +63,7 @@ lookup; no NMD is computed at this layer.
 
 | Stage | Bound on normalized similarity | Needs |
 | --- | --- | --- |
-| Length | `min(|Q|,|D|) / max(|Q|,|D|)` | lengths only (the README's `real_quick_ratio` todo) |
+| Length | `min(|Q|,|D|) / max(|Q|,|D|)` | lengths only (the `real_quick_ratio` idea, now HANDOFF item 12) |
 | Count | `sim(q,w) ≤ 2·Σ_g min(c_q(g), c_w(g))`, already used by V5 at `nmd_index.py:340-345` | n-gram count index, no EMD DP |
 | Relaxed (RWMD) | `min( Σ_q max_{w∈D} sim(q,w), Σ_{w∈D} max_q sim(q,w) )` | real NMD values from layer 1 |
 | Exact | `linear_sum_assignment` | only on docs whose bound beats the current k-th best exact score |
@@ -109,7 +109,7 @@ class BowIndex:
   `min_acceptable_score`. The BOW index needs *every* nonzero similarity (or
   everything above a `min_similarity`). The second half of that method
   (`nmd/nmd_index.py:347-376`) computes the right thing if the top-k filter is
-  skipped — this is the README's "add a min_similarity filter" todo.
+  skipped — this is the "add a min_similarity filter" idea, now HANDOFF item 12.
 - Normalization must match: `bow_ngram_movers_distance` uses a single `n`; the
   index default is `(2, 4)` averaged via `mean(..., dim)`. Use a single `n`, or
   accept that the indexed metric differs from `nmd_bow.py`.

@@ -9,7 +9,7 @@ characters, where the errors are edits -- transpositions, dropped letters, phone
 On that job it is the best of the systems measured below: +0.07 to +0.28 test MAP over the best
 baseline on all five such tasks, at 1-7 ms/query, and ~100x faster than the brute-force
 edit-distance scan that is the honest alternative. On records and on prose it is not; see
-[what this is good for](#what-this-is-good-for-and-what-it-is-not) before reaching for it.
+[what this is good for](https://github.com/averykhoo/ngram-movers-distance#what-this-is-good-for-and-what-it-is-not) before reaching for it.
 
 ```bash
 pip install nmd  # no dependencies, python >= 3.10
@@ -84,7 +84,7 @@ them by their full path and install what they need yourself:
 
 | import | needs | what it is for |
 |---|---|---|
-| `nmd.nmd_index_v7.ApproxWordListV7` | `numpy` | same index as `WordList`, ~20-29x faster lookups, ~11-14x less memory |
+| `nmd.nmd_index_v7.ApproxWordListV7` | `numpy` | same index as `WordList`, ~14-16x faster lookups on ~10x less memory (measured 2026-09-18, table below) |
 | `nmd.nmd_bow.bow_ngram_movers_distance` | `scipy` | compare two sequences of tokens |
 | `nmd.nmd_segments.segment_movers_distance` | `scipy`, `numpy` | as above, but tolerant of split / merged words |
 | `nmd.nmd_word_set.WordSet` | `pyroaring`, `regex` | a mutable, set-like container (`add` / `discard` / `in`) with unicode normalization |
@@ -147,21 +147,27 @@ print(word_list.lookup(f'beaurocracy'))  # -> [('bureaucracy', (11.73, 17.45)), 
 
 * WARNING: requires `numpy`, so it's not available by default in the `nmd` namespace
 * same idea as `WordList`, but the lookup is vectorised instead of looping in python
-* the index score is the *exact* nmd similarity, not an approximation of it -- the n-gram
-  count bound used to avoid scoring the whole vocabulary is two-sided, so it can only
-  discard words that genuinely cannot reach the top k
+* the index score is the *exact* nmd similarity, not an approximation of it: there is no
+  pruning pass and no prefilter, so every posting of every query n-gram is scored and the
+  top k is guaranteed to equal an exhaustive scan, with ties broken alphabetically
 
-measured against `WordList` (`ApproxWordListV6`, `filter_n=3`) with `n=(2, 4)`:
+measured against `WordList` (`ApproxWordListV6`, `filter_n=3`) with `n=(2, 4)`, on
+2026-09-18 by [experiments/v6_vs_v7_bench.py](https://github.com/averykhoo/ngram-movers-distance/blob/master/experiments/v6_vs_v7_bench.py), which regenerates this
+table. index size is a walk of the index object graph, not process memory; lookup is the
+minimum over 3 repeats of 20 corrupted queries, `top_k=10`:
 
 | vocabulary | build | index size | lookup |
-|------------|-------|------------|--------|
-| 41.5k, V6  | 2.5s  | 168.7 MB   | 102.5 ms |
-| 41.5k, V7  | 3.2s  | 14.8 MB    | 5.2 ms |
-| 250k, V6   | 31.5s | 1137.1 MB  | 798.4 ms |
-| 250k, V7   | 21.1s | 82.4 MB    | 27.2 ms |
+|------------|-------|------------|----------|
+| 41.6k, V6  | 0.8s  | 159.7 MB   | 10.1 ms  |
+| 41.6k, V7  | 0.5s  | 17.1 MB    | 0.7 ms   |
+| 250k, V6   | 13.2s | 1087.6 MB  | 214.3 ms |
+| 250k, V7   | 4.9s  | 105.2 MB   | 13.5 ms  |
 
-the gap widens with vocabulary size (20x at 41.5k, 29x at 250k) because V6 loops in python
-over every word touched by any shared n-gram, and that set grows with the vocabulary
+so ~14x the lookup speed at 41.6k and ~16x at 250k, on ~10x less memory. the memory figures
+are deterministic; the timings were taken on a shared laptop and the V6 column in particular
+moves run to run, so treat the speed ratio as "more than 10x", not as three digits. V6 loops
+in python over every word touched by any shared n-gram, and that set grows with the
+vocabulary, which is why its lookup column grows faster than V7's
 
 ```python
 from nmd.nmd_index_v7 import ApproxWordListV7
@@ -225,10 +231,13 @@ only.
       posting-list insertion order, so results are reproducible run to run
     * there is no `filter_n` prefilter: it existed to keep the python candidate loop short,
       and once that loop is vectorised it costs more than it saves
-    * queries whose length is exactly `n - 2` raise `ZeroDivisionError` in `WordList`, and
-      work here
-    * `invert=False` returns an actual distance (`ApproxWordListV5` returned
-      `normalize - score`, i.e. a negative number)
+    * a query too short to survive `WordList`'s `filter_n` prefilter returns nothing at
+      all from it, and is still scored here -- `WordList((2, 4)).lookup("h")` is `[]`
+      where this returns matches. (It no longer *raises*: the `ZeroDivisionError` that
+      short queries used to hit was fixed in V6 on 2026-09-05, see below)
+    * `lookup()` takes an `invert` flag at all: `WordList.lookup()` has no such parameter
+      and always reports a similarity. (The frozen `ApproxWordListV5` did have one, and
+      with `invert=False` returned `normalize - score`, i.e. a negative number)
     * ⚠ **`normalize` defaults to `True` here**, where `WordList` and
       `ngram_movers_distance()` both default to `False`. An un-normalized score is a raw
       similarity sum, so it grows with candidate length and biases ranking toward long
@@ -314,54 +323,3 @@ fixed 2026-09-05 in `ApproxWordListV6`, i.e. in `WordList` (see `tests/test_inde
 
 neither fix changes any score on the documented `n=(2, 4)` default, where `num_grams()` and
 `num_n_grams()` agree for every non-empty word.
-
-# todo
-
-* try out cython 3? maybe in pure python mode
-* todo: try [this paper's algo](https://www.aclweb.org/anthology/C10-1096.pdf)
-    * which referenced [this paper](https://www.cse.iitb.ac.in/~sunita/papers/sigmod04.pdf)
-* use less bizarre test strings
-* note where the algorithm breaks down
-    * matching long strings with many n-grams
-    * matching strings with significantly different lengths
-* rename nmd_bow because it isn't really a bag-of-words, it's a token sequence
-* index for nmd_bow, and split/merge-tolerant token matching: see [docs/bow-plan.md](https://github.com/averykhoo/ngram-movers-distance/blob/master/docs/bow-plan.md)
-* consider a `real_quick_ratio`-like optimization, or maybe calculate length bounds?
-    * needs a cutoff to actually speed up though, makes a huge difference for difflib
-    * a sufficiently low cutoff is not unreasonable, although the default of 0.6 might be a little high for nmd
-    * that said the builtin diff performs pretty badly at low similarities, so 0.6 is reasonable for them
-
-```python
-def real_quick_ratio(self):
-    """Return an upper bound on ratio() very quickly.
-
-    This isn't defined beyond that it is an upper bound on .ratio(), and
-    is faster to compute than either .ratio() or .quick_ratio().
-    """
-
-    la, lb = len(self.a), len(self.b)
-    # can't have more matches than the number of elements in the shorter sequence
-    matches, length = min(la, lb), la + lb
-    if length:
-        return 2.0 * matches / length
-    return 1.0
-```
-
-* create a better string container for the index, more like a `set`
-    * `add(word: str)`
-    * `remove(word: str)`
-    * `clear()`
-    * `__contains__(word: str)`
-    * `__iter__()`
-* better lookup
-    * add a min_similarity filter (float, based on normalized distance)
-        * `lookup(word: str, min_similarity: float = 0, filter: bool = True)`
-    * try `__contains__` first
-        * try levenshtein automaton (distance=1) second?
-            * sort by nmd, since most likely there will only be a few results
-        * but how to get multiple results?
-            * still need to run full search?
-            * or maybe just return top 1 result?
-* prefix lookup
-    * look for all strings that are approximately prefixed
-    * like existing index but not normalized and ignoring unmatched ngrams from target

@@ -27,8 +27,11 @@ refreshed.
    that would let V7 use it as one anyway. Real API surface work, not a probe.
 3. **Release, when asked.** Item 13 is closed: `__version__` is `0.1.0`, the gate is green, and
    the tag command in `docs/releasing.md` has been corrected (the old one did not push the
-   tag at all). Nothing is known to be blocking. A `workflow_dispatch` dry run first is still
-   worth the two minutes — the pipeline has never run.
+   tag at all). Nothing is known to be blocking. `master` was pushed on 2026-09-18 and both CI
+   (`35346379109`) and the `workflow_dispatch` dry run of the publish workflow (`35346407033`)
+   went green on `5cb17ef`: all 11 matrix cells, the bare install, build, `twine check`, the
+   clean-venv smoke test and provenance, with the upload step skipped as designed. Only the
+   three `validate-tag` checks and the upload itself remain unexercised; both need a real tag.
 4. **Hygiene whenever convenient**: 27 (BEIR caveat, already written, no action needed), 28
    (re-measure Part 10 timings on an idle machine before quoting them again), 30-33 (the
    pre-release review findings that were not blockers).
@@ -133,8 +136,9 @@ installed but **nothing in `nmd/` imports it** — it was only used to evaluate 
 
 `docs/releasing.md` has the procedure and the current state. In short, as of 2026-09-18: tag
 `v*` triggers `.github/workflows/publish-to-pypi.yml`, which never writes to the repository;
-that workflow is pushed and active on GitHub but **has never run**; and item 13 below blocks the
-first release.
+that workflow has run once as a `workflow_dispatch` dry run (`35346407033`, 2026-09-18, green,
+upload skipped) but has never uploaded; and item 13 below is closed, so nothing blocks the first
+release.
 
 **General CI exists as of 2026-09-18** — `.github/workflows/ci.yml`, on every push to any branch.
 It went green on its first run (`35305903082`, commit `18672a7`, 29s), which also means

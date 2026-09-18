@@ -72,13 +72,17 @@ A tag is deletable (`git push --delete origin <tag>`); a PyPI upload is not. Eve
 
 ## Status
 
-**Pushed 2026-09-18, never run.** GitHub lists the workflows as active, and this one has no runs:
-its triggers are `push: tags: ['v*']` and `workflow_dispatch`, so pushing to `master` does not
-start it. (The one run on the repository is GitHub's own `dynamic/dependabot/update-graph`, which
-fired because `pyproject.toml` changed.)
+**Dry run green, 2026-09-18.** `workflow_dispatch` run `35346407033` on `5cb17ef`: `validate-tag`
+with its three checks skipped (non-tag ref), all 11 matrix cells green (ubuntu 20-29s, windows
+47-62s, macos 18s), the bare install green, and the `deploy` job through build, `twine check`,
+the clean-venv smoke test (`wheel smoke test OK: 0.438...`) and provenance, with the upload step
+skipped as designed. Its triggers are `push: tags: ['v*']` and `workflow_dispatch`, so pushing to
+`master` does not start it. **Never uploaded.** What a real tag will exercise for the first time
+is exactly the three `validate-tag` checks and the upload step; everything else has now run on
+real runners.
 
-⚠ **That is no longer true of the repository as a whole.** `ci.yml` was added on 2026-09-18 and
-runs on every push to any branch, so the suite and the dependency-free check now execute off the
+`ci.yml` was added on 2026-09-18 and
+runs on every push to any branch, so the suite and the dependency-free check also execute off the
 release path. **It ran green on its first attempt** — run `35305903082`, commit `18672a7`,
 29s total: ubuntu/3.10 25s, ubuntu/3.14 23s, bare install 11s. `publish-to-pypi.yml` correctly did
 not fire.
@@ -86,18 +90,15 @@ not fire.
 That first run matters for this file, because `ci.yml` and `publish-to-pypi.yml` **share two of
 the four workflows**. `template-test.yml` and `template-verify-minimal.yml` have now executed on
 real runners, so the reusable-workflow wiring, the dependency install and the bare-install
-assertion are proven rather than merely linted. What remains untested on the release path is
-therefore narrower than it was: the `validate-tag` guards (they need a real tag), the nine matrix
-cells outside ubuntu/3.10 and ubuntu/3.14, and the whole `deploy` job — build, `twine check`,
-clean-venv smoke test, attestation and the upload. A `workflow_dispatch` run covers everything in
-that list except `validate-tag` and the upload itself. `publish-to-pypi.yml` is still the only thing that builds, attests or uploads, and
-is still the only place the full 11-cell matrix runs — but "has this code ever been tested on
-linux" is now answered before release time rather than during it. Scope is documented in the
-header of `ci.yml`.
+assertion are proven rather than merely linted. The dry run above then covered the rest of the
+release path except `validate-tag` and the upload. `publish-to-pypi.yml` is still the only thing
+that builds, attests or uploads, and is still the only place the full 11-cell matrix runs — but
+"has this code ever been tested on linux" is now answered before release time rather than during
+it. Scope is documented in the header of `ci.yml`.
 
 Published versions `0.0.1`–`0.0.6` all predate the pipeline and went out by hand. The first tag
-pushed will be the first real exercise of it — a `workflow_dispatch` dry run first is worth the
-two minutes.
+pushed will be the first real upload through it. Repeat the `workflow_dispatch` dry run after
+any change to the workflows or the packaging; it is two minutes.
 
 **Hand dry run, 2026-09-18.** Everything the pipeline claims to check was checked locally first,
 off a real `python -m build` rather than off the source tree: `twine check --strict` green on both

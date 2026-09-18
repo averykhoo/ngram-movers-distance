@@ -6,6 +6,33 @@ decisions and negative results that still bind, and points back here for the rea
 
 ---
 
+## Session 2026-09-18 (latest): pushed, CI green, publish dry run green
+
+No code changed. The pre-release review's six commits were pushed (`18672a7..5cb17ef`) and the
+publish workflow was exercised for the first time, as a `workflow_dispatch` dry run.
+
+**Independent verification first**, since the previous entry's tree had not run anywhere but this
+laptop: the built `0.1.0` sdist and wheel pass `twine check --strict`; `experiments/release_check.py`
+is green in both `bare` and `full` mode against that wheel (in two throwaway venvs, deleted
+after); the four action SHAs pinned in the workflows resolve to their claimed tags upstream; and
+the published `0.0.6` wheel was downloaded and inspected -- it ships `WordList = ApproxWordListV5`,
+a `nmd/nmd.py` module and no `Requires-Python`, which is the evidence behind 0.1.0 over 0.0.7.
+
+**CI on the push, run `35346379109`:** green, 3 jobs (ubuntu/3.10 20s, ubuntu/3.14 28s, bare
+install 13s).
+
+**Dry run, run `35346407033`:** green, 14 jobs. `validate-tag` with its three checks skipped
+(non-tag ref); all 11 matrix cells green (ubuntu 23-29s, windows 47-62s, macos 18s); bare install
+green; `deploy` through build, `twine check`, the clean-venv smoke test (`wheel smoke test OK:
+0.43846...`) and provenance, with the upload step skipped and the dry-run summary written. The
+only annotation is GitHub's notice that `ubuntu-latest` migrates to Ubuntu 26 on 2026-10-19.
+Conclusions were confirmed first-hand with `gh run view`, not taken from the watching subagent.
+
+**Still unexercised, and only a real tag can exercise them:** the three `validate-tag` checks and
+the upload step. Nothing tagged, nothing uploaded.
+
+---
+
 ## Session 2026-09-18 (later): pre-release review, three real bugs, and 0.1.0
 
 The whole tree was reviewed against a release, module by module. Three things were wrong in

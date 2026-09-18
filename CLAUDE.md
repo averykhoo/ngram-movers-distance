@@ -62,7 +62,8 @@ spent the moment the upload lands.
    test -n "$VERSION" && git tag -a "v$VERSION" -m "v$VERSION" && git push origin master "v$VERSION"
    ```
 3. `workflow_dispatch` runs everything **except** the upload, as a repeatable dry
-   run. Worth doing first: the pipeline has never actually run.
+   run. Done once, green, on 2026-09-18 (run `35346407033`); repeat it after any change
+   to the workflows or the packaging.
 
 ⚠ `0.0.6` is already on PyPI, so `__version__` must move before any release can
 succeed — `validate-tag` checks this and stops in ~20s rather than at the upload.

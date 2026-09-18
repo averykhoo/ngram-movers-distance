@@ -109,61 +109,21 @@ jobs:
   # STAGE 2b: the dependency-free promise, checked against the built wheel.
   #
   # HANDOFF's standing constraint (2026-09-05) is that `import nmd` pulls in
-  # nothing third-party. Until now that was verified once by hand and never
-  # pinned. This checks it on the artifact rather than the source tree, so it
-  # also catches pyproject.toml accidentally growing a dependency.
+  # nothing third-party. It is checked on the artifact rather than the source
+  # tree, so it also catches pyproject.toml accidentally growing a dependency.
+  #
+  # The steps moved into template-verify-minimal.yml on 2026-09-18 so that ci.yml
+  # can run the same check on every push to master without a second copy. Keep it
+  # a single copy: a stale duplicate of this check would fail by passing.
   # ---------------------------------------------------------------------------
   verify-minimal:
     name: Verify the dependency-free install
     needs: validate-tag
-    runs-on: ubuntu-latest
     permissions:
       contents: read
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.10" # the declared floor
-
-      - name: Build the wheel
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
-          python -m build
-
-      - name: Install it alone, with none of the optional packages
-        run: |
-          python -m venv /tmp/bare
-          /tmp/bare/bin/pip install dist/*.whl
-          /tmp/bare/bin/python - <<'PY'
-          import importlib.util
-          import sys
-
-          optional = ('numpy', 'scipy', 'pyroaring', 'regex', 'numba')
-
-          # Fail loudly if the environment is not actually bare -- otherwise this
-          # whole job passes vacuously, which is worse than not having it.
-          for mod in optional:
-              assert importlib.util.find_spec(mod) is None, \
-                  f'{mod} is installed; this check would pass for the wrong reason'
-
-          import nmd
-          from nmd import ngram_movers_distance, WordList
-
-          leaked = [m for m in optional if m in sys.modules]
-          assert not leaked, f'importing nmd pulled in {leaked}'
-
-          assert 0.0 <= ngram_movers_distance('hello', 'yellow', normalize=True) <= 1.0
-          wl = WordList()
-          for w in ('hello', 'yellow', 'help', 'mellow'):
-              wl.add_word(w)
-          assert wl.lookup('helo'), 'WordList returned nothing'
-
-          print('dependency-free install OK; nmd', nmd.__version__)
-          PY
+    uses: ./.github/workflows/template-verify-minimal.yml
+    with:
+      python-version: "3.10" # the declared floor
 
   # ---------------------------------------------------------------------------
   # STAGE 3: build once, prove it, attest it, ship it.

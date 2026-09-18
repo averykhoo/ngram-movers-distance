@@ -24,9 +24,10 @@ third-party; the README's dependency table names the right package for each opti
 every README code block runs and reproduces the numbers printed in its comments; the suite passes
 on the floor.
 
-**Not** covered, and left to CI: five of the seven matrix cells (this runs one python on one OS,
-plus whatever the repo env is), trusted publishing, build provenance, and the `validate-tag`
-guards, which need a real tag. Nothing here renders `README.md` either — see the note in
+**Not** covered, and left to CI: nine of the eleven matrix cells — this runs python 3.10 and 3.12
+on windows, which is two of them (counted from the workflow 2026-09-18: 2 OSes × 5 pythons, plus
+macos/3.12) — along with trusted publishing, build provenance, and the `validate-tag` guards,
+which need a real tag. Nothing here renders `README.md` either — see the note in
 `docs/releasing.md` about `twine check` not rendering markdown descriptions.
 
 ## Prerequisites
@@ -124,6 +125,25 @@ rm -rf .scratch/venv-build dist
 
 Keep `experiments/release_check.py`; it is tracked, and re-running it is cheaper than
 reconstructing what it checked.
+
+## Linting the workflows
+
+Workflow YAML cannot be exercised locally at all — the only way to run it is to push. `actionlint`
+is the nearest thing to a check, and it does validate the reusable-workflow wiring, which is the
+part most likely to be wrong:
+
+```bash
+"$REPO_PY" -m venv .scratch/venv-lint
+.scratch/venv-lint/Scripts/python.exe -m pip install --quiet actionlint-py
+.scratch/venv-lint/Scripts/actionlint.exe -no-color -oneline      # silent + rc 0 means clean
+rm -rf .scratch/venv-lint
+```
+
+`actionlint-py` ships the binary, so there is no Go toolchain involved; note it installs as
+`Scripts/actionlint.exe` rather than an importable module. Verified 2026-09-18 to catch both an
+input that the called workflow does not declare and a `uses:` pointing at a file that does not
+exist — the two ways the split between `ci.yml`, `publish-to-pypi.yml` and the two templates can
+break.
 
 ## Inspecting the artifacts by hand
 

@@ -13,6 +13,11 @@ next, in full.
 
 Green before every push, no exceptions. If it is red, say what is red and leave it.
 
+`.github/workflows/ci.yml` runs the same suite on every push, on ubuntu/3.10 (and additionally
+ubuntu/3.14 plus the dependency-free install check on `master`). It is a **cheap subset**, not a
+replacement for the local gate: the full 11-cell matrix only runs on the release path. Workflow
+YAML cannot be tested locally — lint it with `actionlint`, per `docs/release-dry-run.md`.
+
 ## Invariants
 
 - **`nmd` stays dependency-free, and the default path stays pure python.**

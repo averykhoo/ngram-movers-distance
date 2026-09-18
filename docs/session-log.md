@@ -47,7 +47,8 @@ within Damerau-Levenshtein 2, 65 within 5.
 
 **The suite passes on the declared floor.** 1102 passed, 1 xfailed in 10.39s on python 3.10.21;
 the repo env is 3.12.14, so `>=3.10` had never actually been exercised. Still only two of the
-seven matrix cells the workflow declares.
+**eleven** cells the release matrix declares — 2 OSes × 5 pythons plus macos/3.12, counted off the
+workflow on 2026-09-18. (An earlier draft of this entry said "seven"; that was never measured.)
 
 **Two facts about the tooling worth not rediscovering:**
 
@@ -87,6 +88,36 @@ fails the measurement; deleting `regex` from the README's `nmd_word_set` depende
 README pin while the import check stays green — which is exactly the drift that pin exists for; and
 running `bare` in the full env fails the environment assertion. Run with no wheel installed it
 fails `nmd is importable` and stops instead of falling back to the tree.
+
+**General CI now exists** — `.github/workflows/ci.yml`, added the same day. Until then the only
+trigger in the repository was `push: tags: v*`, so the matrix could only ever run *as part of a
+release*, which is the worst moment to find a red cell. Scope was chosen deliberately small:
+
+| trigger | what runs |
+|---|---|
+| push, any branch | the suite on ubuntu / **3.10** |
+| `master` and PRs | + ubuntu / **3.14**, + the dependency-free install check |
+
+The two pythons are the **ends** — the floor catches a 3.11+ feature sneaking in, the newest
+catches a stdlib removal or a dependency without a wheel yet; middle versions rarely break alone
+and stay on the release path. ubuntu-only because `nmd` ships no compiled code and this repo is
+developed on Windows, so windows/3.12 is already exercised continuously by the local gate — ubuntu
+is the platform nothing else covers. The full eleven-cell matrix still gates the upload.
+
+⚠ **`verify-minimal` was extracted into `template-verify-minimal.yml`** rather than copied into
+`ci.yml`. Two inline copies of the dependency-free check would be a check that fails by passing
+the moment one drifts; `publish-to-pypi.yml` now calls the same file. Its script also gained an
+`__all__` assertion while being moved.
+
+**Workflow YAML cannot be run locally, so it was linted instead.** `actionlint` (via `actionlint-py`,
+which ships the binary — it installs as `Scripts/actionlint.exe`, not an importable module) is
+clean across all four workflows. Sabotage-checked rather than trusted: it catches an input the
+called workflow does not declare, and a `uses:` pointing at a file that does not exist, returning
+to rc 0 on restore. Those are the two ways the four-file split can break. Commands are in
+`docs/release-dry-run.md`. ⚠ A hand-rolled python cross-check written alongside it reported five
+false "missing workflow" failures, from `uses.lstrip('./')` — `lstrip` strips *characters*, so it
+ate the dot of `.github`. The lesson is the ordinary one: the tool that knows the schema beat the
+five-minute script, and the script's failures were in the script.
 
 **Still blocking a release: item 13.** `__version__` is still `'0.0.6'`, which is on PyPI. Left
 unbumped on purpose — the owner declined to pick a number in this session, and it is only

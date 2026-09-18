@@ -64,11 +64,17 @@ A tag is deletable (`git push --delete origin <tag>`); a PyPI upload is not. Eve
 
 ## Status
 
-**Pushed 2026-09-18, never run.** GitHub now lists `Publish to PyPI` and `Test (reusable)` as
-active workflows, and neither has any runs: the triggers are `push: tags: ['v*']` and
-`workflow_dispatch`, so pushing to `master` does not start one. (The one run on the repository
-is GitHub's own `dynamic/dependabot/update-graph`, which fired because `pyproject.toml`
-changed.)
+**Pushed 2026-09-18, never run.** GitHub lists the workflows as active, and this one has no runs:
+its triggers are `push: tags: ['v*']` and `workflow_dispatch`, so pushing to `master` does not
+start it. (The one run on the repository is GitHub's own `dynamic/dependabot/update-graph`, which
+fired because `pyproject.toml` changed.)
+
+⚠ **That is no longer true of the repository as a whole.** `ci.yml` was added on 2026-09-18 and
+runs on every push to any branch, so the suite and the dependency-free check now execute off the
+release path. `publish-to-pypi.yml` is still the only thing that builds, attests or uploads, and
+is still the only place the full 11-cell matrix runs — but "has this code ever been tested on
+linux" is now answered before release time rather than during it. Scope is documented in the
+header of `ci.yml`.
 
 Published versions `0.0.1`–`0.0.6` all predate the pipeline and went out by hand. The first tag
 pushed will be the first real exercise of it — a `workflow_dispatch` dry run first is worth the
@@ -83,8 +89,8 @@ every README code block runs against that installed wheel and reproduces its doc
 and the suite is green on 3.10 as well as the repo's 3.12. It is now a runbook rather than a
 one-off — `docs/release-dry-run.md`, driving `experiments/release_check.py`. Write-up:
 `docs/session-log.md`, session 2026-09-18. This substitutes for none of the CI — it covers two of
-the seven matrix cells and cannot exercise trusted publishing — but it means a `workflow_dispatch`
-run is now expected to be the first thing that fails, if anything does.
+the eleven matrix cells and cannot exercise trusted publishing — but it means a
+`workflow_dispatch` run is now expected to be the first thing that fails, if anything does.
 
 ⚠ **`twine check` does not render a markdown description.** `twine/commands/check.py::_RENDERERS`
 maps `"text/markdown": None` with the comment "Rendering cannot fail", so on this package it

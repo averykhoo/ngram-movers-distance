@@ -129,8 +129,13 @@ installed but **nothing in `nmd/` imports it** — it was only used to evaluate 
 
 `docs/releasing.md` has the procedure and the current state. In short, as of 2026-09-18: tag
 `v*` triggers `.github/workflows/publish-to-pypi.yml`, which never writes to the repository;
-the workflow is pushed and active on GitHub but **has never run**; and item 13 below blocks the
+that workflow is pushed and active on GitHub but **has never run**; and item 13 below blocks the
 first release.
+
+**General CI exists as of 2026-09-18** — `.github/workflows/ci.yml`, on every push to any branch.
+Deliberately a cheap subset of the release matrix: the suite on ubuntu/3.10 everywhere, plus
+ubuntu/3.14 and the dependency-free install check on `master` and PRs. The reasoning for those
+cells is in the file's header. The full 11-cell matrix stays on the release path.
 
 A **hand dry run on 2026-09-18** exercised everything the pipeline claims to check, off a real
 `python -m build` rather than the source tree — artifacts, metadata, a bare-python-3.10 install of

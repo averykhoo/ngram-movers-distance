@@ -1,0 +1,68 @@
+name: CI
+
+# The suite, off the release path. Before this existed the only trigger in the
+# repository was `push: tags: v*`, so the matrix could only ever run as part of
+# a release -- the worst moment to discover a red cell. The comprehensive matrix
+# (11 cells, three OSes, every supported python) still lives in
+# publish-to-pypi.yml and still gates the upload; this is the cheap subset.
+#
+# Scope, decided 2026-09-18:
+#
+#   any branch        the suite on python 3.10, the declared floor
+#   master and PRs    + python 3.14, the newest supported, and the
+#                     dependency-free install check
+#
+# Why those and not others. 3.10 and 3.14 are the two ENDS: the floor catches a
+# 3.11+ feature sneaking in, the newest catches a stdlib removal or a dependency
+# with no wheel yet. Middle versions rarely break alone and are covered at
+# release time. ubuntu-only because `nmd` ships no compiled code and this repo is
+# developed on Windows -- windows/3.12 is already exercised continuously by the
+# local gate, so ubuntu is the platform nothing else covers.
+#
+# Note: a branch pushed in this repo and then opened as a PR runs twice, once per
+# trigger. `pull_request` is kept anyway so that PRs from forks -- which the push
+# trigger does not see -- are still tested.
+
+on:
+  push:
+    branches: [ '**' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions: { }
+
+# A burst of commits should leave one run, not five. Superseded runs are
+# cancelled rather than queued.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Every push, every branch. The floor is the single highest-value cell: it is
+  # the version the local gate never runs.
+  floor:
+    name: Suite
+    permissions:
+      contents: read
+    uses: ./.github/workflows/template-test.yml
+    with:
+      os: ubuntu-latest
+      python-version: "3.10"
+
+  newest:
+    name: Suite
+    if: github.ref == 'refs/heads/master' || github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/template-test.yml
+    with:
+      os: ubuntu-latest
+      python-version: "3.14"
+
+  # The headline invariant, which until now ran only at release time.
+  bare:
+    name: Dependency-free install
+    if: github.ref == 'refs/heads/master' || github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/template-verify-minimal.yml
